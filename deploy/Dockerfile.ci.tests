@@ -43,7 +43,7 @@ RUN cd /usr/local/src/steem && \
         -DSKIP_BY_TX_ID=ON \
         ..
 
-RUN cd /usr/local/src/steem/build && make -j16
+RUN cd /usr/local/src/steem/build && make -j
 
 RUN cd /usr/local/src/steem/build && \
     ./tests/chain_test
