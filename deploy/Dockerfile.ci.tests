@@ -1,4 +1,4 @@
-FROM phusion/baseimage:0.9.19
+FROM ubuntu:18.04 
 
 RUN \
     apt-get update && \
@@ -31,9 +31,8 @@ RUN \
 
 ADD . /usr/local/src/steem
 
-RUN \
-    cd /usr/local/src/steem && \
-    mkdir build && \
+RUN cd /usr/local/src/steem && \
+    mkdir -p build && \
     cd build && \
     cmake \
         -DCMAKE_BUILD_TYPE=Release \
@@ -42,10 +41,15 @@ RUN \
         -DLOW_MEMORY_NODE=OFF \
         -DCLEAR_VOTES=ON \
         -DSKIP_BY_TX_ID=ON \
-        .. && \
-    make -j16 && \
-    ./tests/chain_test && \
-    ./tests/plugin_test && \
+        ..
+
+RUN cd /usr/local/src/steem/build && make -j16
+
+RUN cd /usr/local/src/steem/build && \
+    ./tests/chain_test
+
+RUN cd /usr/local/src/steem/build && \    
+    ./tests/plugin_test
+
+RUN cd /usr/local/src/steem/build && \
     ./programs/util/test_fixed_string
-
-
