@@ -172,6 +172,30 @@ class InternalStats {
     // Number of compactions done per CompactionReason
     int counts[static_cast<int>(CompactionReason::kNumOfReasons)];
 
+    CompactionStats& operator=(const CompactionStats& other) {
+      if (this != &other) {
+        // Copy all fields explicitly
+        this->micros = other.micros;
+        this->cpu_micros = other.cpu_micros;
+        this->bytes_read_non_output_levels = other.bytes_read_non_output_levels;
+        this->bytes_read_output_level = other.bytes_read_output_level;
+        this->bytes_written = other.bytes_written;
+        this->bytes_moved = other.bytes_moved;
+        this->num_input_files_in_non_output_levels =
+            other.num_input_files_in_non_output_levels;
+        this->num_input_files_in_output_level =
+            other.num_input_files_in_output_level;
+        this->num_output_files = other.num_output_files;
+        this->num_input_records = other.num_input_records;
+        this->num_dropped_records = other.num_dropped_records;
+        this->count = other.count;
+        for (int i = 0; i < static_cast<int>(CompactionReason::kNumOfReasons); i++) {
+          this->counts[i] = other.counts[i];
+        }
+      }
+      return *this;
+    }
+
     explicit CompactionStats()
         : micros(0),
           cpu_micros(0),

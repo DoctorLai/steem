@@ -2,6 +2,11 @@
 
 Building Steeem requires 8GB of RAM.
 
+## Supported OS
+Currently, steemd can be built on the following operating systems. To build it locally, please install the dependencies listed in the corresponding Dockerfiles.
+
+- [ubuntu18.04](../deploy/Dockerfile.ubuntu18.04)
+
 ## Compile-Time Options (cmake)
 
 ### CMAKE_BUILD_TYPE=[Release/Debug]
@@ -240,7 +245,7 @@ This will only build `steemd`.
 
 ## Building on Other Platforms
 
-- Windows build instructions do not yet exist.
+- To build on Windows, use WSL2 with Docker Desktop and follow the same instructions as above.
 
 - The developers normally compile with gcc and clang. These compilers should
   be well-supported.
