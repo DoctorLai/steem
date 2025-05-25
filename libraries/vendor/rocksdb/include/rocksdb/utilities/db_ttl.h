@@ -4,15 +4,14 @@
 //  (found in the LICENSE.Apache file in the root directory).
 
 #pragma once
-#ifndef ROCKSDB_LITE
 
 #include <string>
 #include <vector>
 
-#include "rocksdb/utilities/stackable_db.h"
 #include "rocksdb/db.h"
+#include "rocksdb/utilities/stackable_db.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 // Database with TTL support.
 //
@@ -57,16 +56,15 @@ class DBWithTTL : public StackableDB {
   static Status Open(const DBOptions& db_options, const std::string& dbname,
                      const std::vector<ColumnFamilyDescriptor>& column_families,
                      std::vector<ColumnFamilyHandle*>* handles,
-                     DBWithTTL** dbptr, std::vector<int32_t> ttls,
+                     DBWithTTL** dbptr, const std::vector<int32_t>& ttls,
                      bool read_only = false);
 
- virtual void SetTtl(int32_t ttl) = 0;
+  virtual void SetTtl(int32_t ttl) = 0;
 
- virtual void SetTtl(ColumnFamilyHandle *h, int32_t ttl) = 0;
+  virtual void SetTtl(ColumnFamilyHandle* h, int32_t ttl) = 0;
 
  protected:
   explicit DBWithTTL(DB* db) : StackableDB(db) {}
 };
 
-}  // namespace rocksdb
-#endif  // ROCKSDB_LITE
+}  // namespace ROCKSDB_NAMESPACE

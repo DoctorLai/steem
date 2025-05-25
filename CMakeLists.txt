@@ -3,7 +3,9 @@ project( Steem )
 cmake_minimum_required( VERSION 3.2 )
 
 set( BLOCKCHAIN_NAME "Steem" )
-set( CMAKE_CXX_STANDARD 14 )
+set( CMAKE_CXX_STANDARD 17 )
+
+add_compile_options(-Wno-error=sign-compare)
 
 set( GUI_CLIENT_EXECUTABLE_NAME Steem )
 set( CUSTOM_URL_SCHEME "gcs" )

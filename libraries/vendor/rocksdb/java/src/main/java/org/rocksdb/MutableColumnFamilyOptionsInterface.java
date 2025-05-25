@@ -5,29 +5,28 @@
 
 package org.rocksdb;
 
-public interface MutableColumnFamilyOptionsInterface
-    <T extends MutableColumnFamilyOptionsInterface>
-        extends AdvancedMutableColumnFamilyOptionsInterface<T> {
-
+public interface MutableColumnFamilyOptionsInterface<
+    T extends MutableColumnFamilyOptionsInterface<T>>
+    extends AdvancedMutableColumnFamilyOptionsInterface<T> {
   /**
    * Amount of data to build up in memory (backed by an unsorted log
    * on disk) before converting to a sorted on-disk file.
-   *
+   * <p>
    * Larger values increase performance, especially during bulk loads.
    * Up to {@code max_write_buffer_number} write buffers may be held in memory
    * at the same time, so you may wish to adjust this parameter
    * to control memory usage.
-   *
+   * <p>
    * Also, a larger write buffer will result in a longer recovery time
    * the next time the database is opened.
-   *
-   * Default: 4MB
+   * <p>
+   * Default: 64MB
    * @param writeBufferSize the size of write buffer.
    * @return the instance of the current object.
    * @throws java.lang.IllegalArgumentException thrown on 32-Bit platforms
    *   while overflowing the underlying platform specific value.
    */
-  MutableColumnFamilyOptionsInterface setWriteBufferSize(long writeBufferSize);
+  T setWriteBufferSize(long writeBufferSize);
 
   /**
    * Return size of write buffer size.
@@ -44,8 +43,7 @@ public interface MutableColumnFamilyOptionsInterface
    * @param disableAutoCompactions true if auto-compactions are disabled.
    * @return the reference to the current option.
    */
-  MutableColumnFamilyOptionsInterface setDisableAutoCompactions(
-      boolean disableAutoCompactions);
+  T setDisableAutoCompactions(boolean disableAutoCompactions);
 
   /**
    * Disable automatic compactions. Manual compactions can still
@@ -58,20 +56,19 @@ public interface MutableColumnFamilyOptionsInterface
   /**
    * Number of files to trigger level-0 compaction. A value &lt; 0 means that
    * level-0 compaction will not be triggered by number of files at all.
-   *
+   * <p>
    * Default: 4
    *
    * @param level0FileNumCompactionTrigger The number of files to trigger
    *   level-0 compaction
    * @return the reference to the current option.
    */
-  MutableColumnFamilyOptionsInterface setLevel0FileNumCompactionTrigger(
-      int level0FileNumCompactionTrigger);
+  T setLevel0FileNumCompactionTrigger(int level0FileNumCompactionTrigger);
 
   /**
    * Number of files to trigger level-0 compaction. A value &lt; 0 means that
    * level-0 compaction will not be triggered by number of files at all.
-   *
+   * <p>
    * Default: 4
    *
    * @return The number of files to trigger
@@ -87,7 +84,7 @@ public interface MutableColumnFamilyOptionsInterface
    * @return the reference to the current option.
    * @see #maxCompactionBytes()
    */
-  MutableColumnFamilyOptionsInterface setMaxCompactionBytes(final long maxCompactionBytes);
+  T setMaxCompactionBytes(final long maxCompactionBytes);
 
   /**
    * We try to limit number of bytes in one compaction to be lower than this
@@ -105,14 +102,14 @@ public interface MutableColumnFamilyOptionsInterface
    * (maxBytesForLevelBase) * (maxBytesForLevelMultiplier ^ (L-1))
    * For example, if maxBytesForLevelBase is 20MB, and if
    * max_bytes_for_level_multiplier is 10, total data size for level-1
-   * will be 20MB, total file size for level-2 will be 200MB,
-   * and total file size for level-3 will be 2GB.
-   * by default 'maxBytesForLevelBase' is 10MB.
+   * will be 200MB, total file size for level-2 will be 2GB,
+   * and total file size for level-3 will be 20GB.
+   * by default 'maxBytesForLevelBase' is 256MB.
    *
    * @param maxBytesForLevelBase maximum bytes for level base.
    *
    * @return the reference to the current option.
-   *
+   * <p>
    * See {@link AdvancedMutableColumnFamilyOptionsInterface#setMaxBytesForLevelMultiplier(double)}
    */
   T setMaxBytesForLevelBase(
@@ -124,13 +121,13 @@ public interface MutableColumnFamilyOptionsInterface
    * (maxBytesForLevelBase) * (maxBytesForLevelMultiplier ^ (L-1))
    * For example, if maxBytesForLevelBase is 20MB, and if
    * max_bytes_for_level_multiplier is 10, total data size for level-1
-   * will be 20MB, total file size for level-2 will be 200MB,
-   * and total file size for level-3 will be 2GB.
-   * by default 'maxBytesForLevelBase' is 10MB.
+   * will be 200MB, total file size for level-2 will be 2GB,
+   * and total file size for level-3 will be 20GB.
+   * by default 'maxBytesForLevelBase' is 256MB.
    *
    * @return the upper-bound of the total size of level-1 files
    *     in bytes.
-   *
+   * <p>
    * See {@link AdvancedMutableColumnFamilyOptionsInterface#maxBytesForLevelMultiplier()}
    */
   long maxBytesForLevelBase();
@@ -138,7 +135,7 @@ public interface MutableColumnFamilyOptionsInterface
   /**
    * Compress blocks using the specified compression algorithm.  This
    * parameter can be changed dynamically.
-   *
+   * <p>
    * Default: SNAPPY_COMPRESSION, which gives lightweight but fast compression.
    *
    * @param compressionType Compression Type.
@@ -150,7 +147,7 @@ public interface MutableColumnFamilyOptionsInterface
   /**
    * Compress blocks using the specified compression algorithm.  This
    * parameter can be changed dynamically.
-   *
+   * <p>
    * Default: SNAPPY_COMPRESSION, which gives lightweight but fast compression.
    *
    * @return Compression type.

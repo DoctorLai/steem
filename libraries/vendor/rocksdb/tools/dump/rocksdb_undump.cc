@@ -3,15 +3,12 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 
-#if !(defined GFLAGS) || defined(ROCKSDB_LITE)
+#if !(defined GFLAGS)
 
 #include <cstdio>
 int main() {
 #ifndef GFLAGS
   fprintf(stderr, "Please install gflags to run rocksdb tools\n");
-#endif
-#ifdef ROCKSDB_LITE
-  fprintf(stderr, "DbUndumpTool is not supported in ROCKSDB_LITE\n");
 #endif
   return 1;
 }
@@ -36,15 +33,15 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  rocksdb::UndumpOptions undump_options;
+  ROCKSDB_NAMESPACE::UndumpOptions undump_options;
   undump_options.db_path = FLAGS_db_path;
   undump_options.dump_location = FLAGS_dump_location;
   undump_options.compact_db = FLAGS_compact;
 
-  rocksdb::Options db_options;
+  ROCKSDB_NAMESPACE::Options db_options;
   if (FLAGS_db_options != "") {
-    rocksdb::Options parsed_options;
-    rocksdb::Status s = rocksdb::GetOptionsFromString(
+    ROCKSDB_NAMESPACE::Options parsed_options;
+    ROCKSDB_NAMESPACE::Status s = ROCKSDB_NAMESPACE::GetOptionsFromString(
         db_options, FLAGS_db_options, &parsed_options);
     if (!s.ok()) {
       fprintf(stderr, "Cannot parse provided db_options\n");
@@ -53,10 +50,10 @@ int main(int argc, char **argv) {
     db_options = parsed_options;
   }
 
-  rocksdb::DbUndumpTool tool;
+  ROCKSDB_NAMESPACE::DbUndumpTool tool;
   if (!tool.Run(undump_options, db_options)) {
     return 1;
   }
   return 0;
 }
-#endif  // !(defined GFLAGS) || defined(ROCKSDB_LITE)
+#endif  // !(defined GFLAGS)

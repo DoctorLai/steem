@@ -1,3 +1,4 @@
+// Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 package org.rocksdb;
 
 import org.junit.ClassRule;
@@ -15,8 +16,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class InfoLogLevelTest {
 
   @ClassRule
-  public static final RocksMemoryResource rocksMemoryResource =
-      new RocksMemoryResource();
+  public static final RocksNativeLibraryResource ROCKS_NATIVE_LIBRARY_RESOURCE =
+      new RocksNativeLibraryResource();
 
   @Rule
   public TemporaryFolder dbFolder = new TemporaryFolder();
@@ -94,12 +95,12 @@ public class InfoLogLevelTest {
     int first_non_header = lines.length;
     // Identify the last line of the header
     for (int i = lines.length - 1; i >= 0; --i) {
-      if (lines[i].indexOf("DB pointer") >= 0) {
+      if (lines[i].contains("DB pointer")) {
         first_non_header = i + 1;
         break;
       }
     }
-    StringBuilder builder = new StringBuilder();
+    final StringBuilder builder = new StringBuilder();
     for (int i = first_non_header; i < lines.length; ++i) {
       builder.append(lines[i]).append(separator);
     }

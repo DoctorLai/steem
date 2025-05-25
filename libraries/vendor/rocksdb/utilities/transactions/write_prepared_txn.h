@@ -5,8 +5,6 @@
 
 #pragma once
 
-#ifndef ROCKSDB_LITE
-
 #include <algorithm>
 #include <atomic>
 #include <mutex>
@@ -30,7 +28,7 @@
 #include "utilities/transactions/transaction_base.h"
 #include "utilities/transactions/transaction_util.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class WritePreparedTxnDB;
 
@@ -42,6 +40,9 @@ class WritePreparedTxn : public PessimisticTransaction {
  public:
   WritePreparedTxn(WritePreparedTxnDB* db, const WriteOptions& write_options,
                    const TransactionOptions& txn_options);
+  // No copying allowed
+  WritePreparedTxn(const WritePreparedTxn&) = delete;
+  void operator=(const WritePreparedTxn&) = delete;
 
   virtual ~WritePreparedTxn() {}
 
@@ -49,19 +50,35 @@ class WritePreparedTxn : public PessimisticTransaction {
   // seq in the WAL that is also published, LastPublishedSequence, as opposed to
   // the last seq in the memtable.
   using Transaction::Get;
-  virtual Status Get(const ReadOptions& options,
-                     ColumnFamilyHandle* column_family, const Slice& key,
-                     PinnableSlice* value) override;
+  Status Get(const ReadOptions& _read_options,
+             ColumnFamilyHandle* column_family, const Slice& key,
+             PinnableSlice* value) override;
 
-  // To make WAL commit markers visible, the snapshot will be based on the last
-  // seq in the WAL that is also published, LastPublishedSequence, as opposed to
-  // the last seq in the memtable.
+  using Transaction::MultiGet;
+  void MultiGet(const ReadOptions& _read_options,
+                ColumnFamilyHandle* column_family, const size_t num_keys,
+                const Slice* keys, PinnableSlice* values, Status* statuses,
+                const bool sorted_input = false) override;
+
+  // Note: The behavior is undefined in presence of interleaved writes to the
+  // same transaction.
+  // To make WAL commit markers visible, the snapshot will be
+  // based on the last seq in the WAL that is also published,
+  // LastPublishedSequence, as opposed to the last seq in the memtable.
   using Transaction::GetIterator;
-  virtual Iterator* GetIterator(const ReadOptions& options) override;
-  virtual Iterator* GetIterator(const ReadOptions& options,
-                                ColumnFamilyHandle* column_family) override;
+  Iterator* GetIterator(const ReadOptions& options) override;
+  Iterator* GetIterator(const ReadOptions& options,
+                        ColumnFamilyHandle* column_family) override;
 
-  virtual void SetSnapshot() override;
+  std::unique_ptr<Iterator> GetCoalescingIterator(
+      const ReadOptions& read_options,
+      const std::vector<ColumnFamilyHandle*>& column_families) override;
+
+  std::unique_ptr<AttributeGroupIterator> GetAttributeGroupIterator(
+      const ReadOptions& read_options,
+      const std::vector<ColumnFamilyHandle*>& column_families) override;
+
+  void SetSnapshot() override;
 
  protected:
   void Initialize(const TransactionOptions& txn_options) override;
@@ -74,6 +91,10 @@ class WritePreparedTxn : public PessimisticTransaction {
   friend class WritePreparedTxnDB;
   friend class WriteUnpreparedTxnDB;
   friend class WriteUnpreparedTxn;
+
+  using Transaction::GetImpl;
+  Status GetImpl(const ReadOptions& options, ColumnFamilyHandle* column_family,
+                 const Slice& key, PinnableSlice* value) override;
 
   Status PrepareInternal() override;
 
@@ -91,21 +112,14 @@ class WritePreparedTxn : public PessimisticTransaction {
 
   Status RollbackInternal() override;
 
-  virtual Status ValidateSnapshot(ColumnFamilyHandle* column_family,
-                                  const Slice& key,
-                                  SequenceNumber* tracked_at_seq) override;
+  Status ValidateSnapshot(ColumnFamilyHandle* column_family, const Slice& key,
+                          SequenceNumber* tracked_at_seq) override;
 
-  virtual Status RebuildFromWriteBatch(WriteBatch* src_batch) override;
-
-  // No copying allowed
-  WritePreparedTxn(const WritePreparedTxn&);
-  void operator=(const WritePreparedTxn&);
+  Status RebuildFromWriteBatch(WriteBatch* src_batch) override;
 
   WritePreparedTxnDB* wpt_db_;
   // Number of sub-batches in prepare
   size_t prepare_batch_cnt_ = 0;
 };
 
-}  // namespace rocksdb
-
-#endif  // ROCKSDB_LITE
+}  // namespace ROCKSDB_NAMESPACE

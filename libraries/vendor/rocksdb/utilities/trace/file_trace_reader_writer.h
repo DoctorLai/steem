@@ -7,7 +7,7 @@
 
 #include "rocksdb/trace_reader_writer.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class RandomAccessFileReader;
 class WritableFileWriter;
@@ -18,8 +18,9 @@ class FileTraceReader : public TraceReader {
   explicit FileTraceReader(std::unique_ptr<RandomAccessFileReader>&& reader);
   ~FileTraceReader();
 
-  virtual Status Read(std::string* data) override;
-  virtual Status Close() override;
+  Status Read(std::string* data) override;
+  Status Close() override;
+  Status Reset() override;
 
  private:
   std::unique_ptr<RandomAccessFileReader> file_reader_;
@@ -33,16 +34,15 @@ class FileTraceReader : public TraceReader {
 // FileTraceWriter allows writing RocksDB traces to a file.
 class FileTraceWriter : public TraceWriter {
  public:
-  explicit FileTraceWriter(std::unique_ptr<WritableFileWriter>&& file_writer)
-      : file_writer_(std::move(file_writer)) {}
+  explicit FileTraceWriter(std::unique_ptr<WritableFileWriter>&& file_writer);
   ~FileTraceWriter();
 
-  virtual Status Write(const Slice& data) override;
-  virtual Status Close() override;
-  virtual uint64_t GetFileSize() override;
+  Status Write(const Slice& data) override;
+  Status Close() override;
+  uint64_t GetFileSize() override;
 
  private:
   std::unique_ptr<WritableFileWriter> file_writer_;
 };
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

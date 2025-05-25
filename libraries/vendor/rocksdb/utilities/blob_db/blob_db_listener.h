@@ -5,15 +5,13 @@
 
 #pragma once
 
-#ifndef ROCKSDB_LITE
-
 #include <atomic>
 
 #include "rocksdb/listener.h"
 #include "util/mutexlock.h"
 #include "utilities/blob_db/blob_db_impl.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 namespace blob_db {
 
 class BlobDBListener : public EventListener {
@@ -23,24 +21,50 @@ class BlobDBListener : public EventListener {
 
   void OnFlushBegin(DB* /*db*/, const FlushJobInfo& /*info*/) override {
     assert(blob_db_impl_ != nullptr);
-    blob_db_impl_->SyncBlobFiles();
+    blob_db_impl_->SyncBlobFiles(WriteOptions(Env::IOActivity::kFlush))
+        .PermitUncheckedError();
   }
 
   void OnFlushCompleted(DB* /*db*/, const FlushJobInfo& /*info*/) override {
     assert(blob_db_impl_ != nullptr);
-    blob_db_impl_->UpdateLiveSSTSize();
+    blob_db_impl_->UpdateLiveSSTSize(WriteOptions(Env::IOActivity::kFlush));
   }
 
   void OnCompactionCompleted(DB* /*db*/,
                              const CompactionJobInfo& /*info*/) override {
     assert(blob_db_impl_ != nullptr);
-    blob_db_impl_->UpdateLiveSSTSize();
+    blob_db_impl_->UpdateLiveSSTSize(
+        WriteOptions(Env::IOActivity::kCompaction));
   }
 
- private:
+  const char* Name() const override { return kClassName(); }
+  static const char* kClassName() { return "BlobDBListener"; }
+
+ protected:
   BlobDBImpl* blob_db_impl_;
 };
 
+class BlobDBListenerGC : public BlobDBListener {
+ public:
+  explicit BlobDBListenerGC(BlobDBImpl* blob_db_impl)
+      : BlobDBListener(blob_db_impl) {}
+
+  const char* Name() const override { return kClassName(); }
+  static const char* kClassName() { return "BlobDBListenerGC"; }
+  void OnFlushCompleted(DB* db, const FlushJobInfo& info) override {
+    BlobDBListener::OnFlushCompleted(db, info);
+
+    assert(blob_db_impl_);
+    blob_db_impl_->ProcessFlushJobInfo(info);
+  }
+
+  void OnCompactionCompleted(DB* db, const CompactionJobInfo& info) override {
+    BlobDBListener::OnCompactionCompleted(db, info);
+
+    assert(blob_db_impl_);
+    blob_db_impl_->ProcessCompactionJobInfo(info);
+  }
+};
+
 }  // namespace blob_db
-}  // namespace rocksdb
-#endif  // !ROCKSDB_LITE
+}  // namespace ROCKSDB_NAMESPACE

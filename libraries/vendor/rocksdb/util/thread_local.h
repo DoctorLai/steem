@@ -15,10 +15,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "util/autovector.h"
 #include "port/port.h"
+#include "util/autovector.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 // Cleanup function that will be called for a stored thread local
 // pointer (if not NULL) when one of the following happens:
@@ -31,7 +31,7 @@ namespace rocksdb {
 // is needed to avoid deadlocks. In particular, the handler shouldn't lock any
 // mutexes and shouldn't call any methods of any ThreadLocalPtr instances,
 // unless you know what you're doing.
-typedef void (*UnrefHandler)(void* ptr);
+using UnrefHandler = void (*)(void* ptr);
 
 // ThreadLocalPtr stores only values of pointer type.  Different from
 // the usual thread-local-storage, ThreadLocalPtr has the ability to
@@ -69,7 +69,7 @@ class ThreadLocalPtr {
   // data for all existing threads
   void Scrape(autovector<void*>* ptrs, void* const replacement);
 
-  typedef std::function<void(void*, void*)> FoldFunc;
+  using FoldFunc = std::function<void(void*, void*)>;
   // Update res by applying func on each thread-local value. Holds a lock that
   // prevents unref handler from running during this call, but clients must
   // still provide external synchronization since the owning thread can
@@ -91,11 +91,10 @@ class ThreadLocalPtr {
 
   class StaticMeta;
 
-private:
-
+ private:
   static StaticMeta* Instance();
 
   const uint32_t id_;
 };
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

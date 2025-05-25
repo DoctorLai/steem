@@ -3,17 +3,17 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 #pragma once
-#ifndef ROCKSDB_LITE
 
 #include <memory>
 #include <string>
 #include <utility>
+
+#include "db/blob/blob_log_format.h"
+#include "file/random_access_file_reader.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/status.h"
-#include "util/file_reader_writer.h"
-#include "utilities/blob_db/blob_log_format.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 namespace blob_db {
 
 class BlobDumpTool {
@@ -52,6 +52,4 @@ class BlobDumpTool {
 };
 
 }  // namespace blob_db
-}  // namespace rocksdb
-
-#endif  // ROCKSDB_LITE
+}  // namespace ROCKSDB_NAMESPACE

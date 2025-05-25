@@ -5,8 +5,6 @@
 //
 #pragma once
 
-#ifndef ROCKSDB_LITE
-
 #include <limits>
 #include <list>
 #include <map>
@@ -17,6 +15,7 @@
 #include "rocksdb/env.h"
 #include "rocksdb/persistent_cache.h"
 #include "rocksdb/status.h"
+#include "rocksdb/system_clock.h"
 
 // Persistent Cache
 //
@@ -52,7 +51,7 @@
 //               |
 //               V
 //              null
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 // Persistent Cache Config
 //
@@ -86,6 +85,8 @@ struct PersistentCacheConfig {
       const std::shared_ptr<Logger>& _log,
       const uint32_t _write_buffer_size = 1 * 1024 * 1024 /*1MB*/) {
     env = _env;
+    clock = (env != nullptr) ? env->GetSystemClock().get()
+                             : SystemClock::Default().get();
     path = _path;
     log = _log;
     cache_size = _cache_size;
@@ -124,10 +125,10 @@ struct PersistentCacheConfig {
   }
 
   //
-  // Env abstraction to use for systmer level operations
+  // Env abstraction to use for system level operations
   //
   Env* env;
-
+  SystemClock* clock;
   //
   // Path for the block cache where blocks are persisted
   //
@@ -232,7 +233,7 @@ struct PersistentCacheConfig {
 // to enable management and stacking of tiers.
 class PersistentCacheTier : public PersistentCache {
  public:
-  typedef std::shared_ptr<PersistentCacheTier> Tier;
+  using Tier = std::shared_ptr<PersistentCacheTier>;
 
   virtual ~PersistentCacheTier() {}
 
@@ -251,20 +252,22 @@ class PersistentCacheTier : public PersistentCache {
   // Print stats to string recursively
   virtual std::string PrintStats();
 
-  virtual PersistentCache::StatsType Stats() override;
+  PersistentCache::StatsType Stats() override;
 
   // Insert to page cache
-  virtual Status Insert(const Slice& page_key, const char* data,
-                        const size_t size) override = 0;
+  Status Insert(const Slice& page_key, const char* data,
+                const size_t size) override = 0;
 
   // Lookup page cache by page identifier
-  virtual Status Lookup(const Slice& page_key, std::unique_ptr<char[]>* data,
-                        size_t* size) override = 0;
+  Status Lookup(const Slice& page_key, std::unique_ptr<char[]>* data,
+                size_t* size) override = 0;
 
   // Does it store compressed data ?
-  virtual bool IsCompressed() override = 0;
+  bool IsCompressed() override = 0;
 
-  virtual std::string GetPrintableOptions() const override = 0;
+  std::string GetPrintableOptions() const override = 0;
+
+  uint64_t NewId() override;
 
   // Return a reference to next tier
   virtual Tier& next_tier() { return next_tier_; }
@@ -283,6 +286,7 @@ class PersistentCacheTier : public PersistentCache {
 
  private:
   Tier next_tier_;  // next tier
+  std::atomic<uint64_t> last_id_{1};
 };
 
 // PersistentTieredCache
@@ -331,6 +335,4 @@ class PersistentTieredCache : public PersistentCacheTier {
   std::list<Tier> tiers_;  // list of tiers top-down
 };
 
-}  // namespace rocksdb
-
-#endif
+}  // namespace ROCKSDB_NAMESPACE

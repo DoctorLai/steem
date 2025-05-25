@@ -8,6 +8,7 @@
 #pragma once
 
 #include <stdint.h>
+
 #include <memory>
 #include <string>
 
@@ -16,7 +17,7 @@
 #include "rocksdb/statistics.h"
 #include "rocksdb/status.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 // PersistentCache
 //
@@ -24,14 +25,14 @@ namespace rocksdb {
 // cache interface is specifically designed for persistent read cache.
 class PersistentCache {
  public:
-  typedef std::vector<std::map<std::string, double>> StatsType;
+  using StatsType = std::vector<std::map<std::string, double>>;
 
   virtual ~PersistentCache() {}
 
   // Insert to page cache
   //
   // page_key   Identifier to identify a page uniquely across restarts
-  // data       Page data
+  // data       Page data to copy (caller retains ownership)
   // size       Size of the page
   virtual Status Insert(const Slice& key, const char* data,
                         const size_t size) = 0;
@@ -44,9 +45,9 @@ class PersistentCache {
   virtual Status Lookup(const Slice& key, std::unique_ptr<char[]>* data,
                         size_t* size) = 0;
 
-  // Is cache storing uncompressed data ?
-  //
-  // True if the cache is configured to store uncompressed data else false
+  // True if the cache is configured to store serialized blocks, which are
+  // potentially compressed and include a trailer (when SST format calls for
+  // one). False if the cache stores uncompressed blocks (no trailer).
   virtual bool IsCompressed() = 0;
 
   // Return stats as map of {string, double} per-tier
@@ -56,6 +57,12 @@ class PersistentCache {
   virtual StatsType Stats() = 0;
 
   virtual std::string GetPrintableOptions() const = 0;
+
+  // Return a new numeric id.  May be used by multiple clients who are
+  // sharding the same persistent cache to partition the key space.  Typically
+  // the client will allocate a new id at startup and prepend the id to its
+  // cache keys.
+  virtual uint64_t NewId() = 0;
 };
 
 // Factor method to create a new persistent cache
@@ -64,4 +71,4 @@ Status NewPersistentCache(Env* const env, const std::string& path,
                           const std::shared_ptr<Logger>& log,
                           const bool optimized_for_nvm,
                           std::shared_ptr<PersistentCache>* cache);
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

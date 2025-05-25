@@ -4,11 +4,12 @@
 //  (found in the LICENSE.Apache file in the root directory).
 //
 // This file implements the "bridge" between Java and C++ for
-// rocksdb::WalFilter.
+// ROCKSDB_NAMESPACE::WalFilter.
 
 #include <jni.h>
 
 #include "include/org_rocksdb_AbstractWalFilter.h"
+#include "rocksjni/cplusplus_to_java_convert.h"
 #include "rocksjni/wal_filter_jnicallback.h"
 
 /*
@@ -16,8 +17,8 @@
  * Method:    createNewWalFilter
  * Signature: ()J
  */
-jlong Java_org_rocksdb_AbstractWalFilter_createNewWalFilter(
-    JNIEnv* env, jobject jobj) {
-  auto* wal_filter = new rocksdb::WalFilterJniCallback(env, jobj);    
-  return reinterpret_cast<jlong>(wal_filter);
+jlong Java_org_rocksdb_AbstractWalFilter_createNewWalFilter(JNIEnv* env,
+                                                            jobject jobj) {
+  auto* wal_filter = new ROCKSDB_NAMESPACE::WalFilterJniCallback(env, jobj);
+  return GET_CPLUSPLUS_POINTER(wal_filter);
 }

@@ -16,30 +16,28 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 
-// Assume that for everywhere
-#undef PLATFORM_IS_LITTLE_ENDIAN
-#define PLATFORM_IS_LITTLE_ENDIAN true
-
 #include <windows.h>
-#include <string>
-#include <string.h>
-#include <mutex>
-#include <limits>
-#include <condition_variable>
-#include <malloc.h>
+//^^ <windows.h> should be included first before other system lib
 #include <intrin.h>
-
+#include <malloc.h>
+#include <process.h>
 #include <stdint.h>
+#include <string.h>
+
+#include <cassert>
+#include <condition_variable>
+#include <limits>
+#include <mutex>
+#include <string>
+#include <thread>
 
 #include "port/win/win_thread.h"
-
-#include "rocksdb/options.h"
+#include "rocksdb/port_defs.h"
 
 #undef min
 #undef max
 #undef DeleteFile
 #undef GetCurrentTime
-
 
 #ifndef strcasecmp
 #define strcasecmp _stricmp
@@ -49,7 +47,7 @@
 #undef DeleteFile
 
 #ifndef _SSIZE_T_DEFINED
-typedef SSIZE_T ssize_t;
+using ssize_t = SSIZE_T;
 #endif
 
 // size_t printf formatting named in the manner of C99 standard formatting
@@ -62,72 +60,34 @@ typedef SSIZE_T ssize_t;
 #ifdef _MSC_VER
 #define __attribute__(A)
 
-// Thread local storage on Linux
-// There is thread_local in C++11
-#ifndef __thread
-#define __thread __declspec(thread)
 #endif
 
-#endif
-
-#ifndef PLATFORM_IS_LITTLE_ENDIAN
-#define PLATFORM_IS_LITTLE_ENDIAN (__BYTE_ORDER == __LITTLE_ENDIAN)
-#endif
-
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 #define PREFETCH(addr, rw, locality)
 
+extern const bool kDefaultToAdaptiveMutex;
+
 namespace port {
 
-// VS < 2015
-#if defined(_MSC_VER) && (_MSC_VER < 1900)
-
-// VS 15 has snprintf
-#define snprintf _snprintf
-
-#define ROCKSDB_NOEXCEPT
-// std::numeric_limits<size_t>::max() is not constexpr just yet
-// therefore, use the same limits
-
-// For use at db/file_indexer.h kLevelMaxIndex
-const uint32_t kMaxUint32 = UINT32_MAX;
-const int kMaxInt32 = INT32_MAX;
-const int64_t kMaxInt64 = INT64_MAX;
-const uint64_t kMaxUint64 = UINT64_MAX;
-
-#ifdef _WIN64
-const size_t kMaxSizet = UINT64_MAX;
-#else
-const size_t kMaxSizet = UINT_MAX;
-#endif
-
-#else // VS >= 2015 or MinGW
-
-#define ROCKSDB_NOEXCEPT noexcept
-
-// For use at db/file_indexer.h kLevelMaxIndex
-const uint32_t kMaxUint32 = std::numeric_limits<uint32_t>::max();
-const int kMaxInt32 = std::numeric_limits<int>::max();
-const uint64_t kMaxUint64 = std::numeric_limits<uint64_t>::max();
-const int64_t kMaxInt64 = std::numeric_limits<int64_t>::max();
-
-const size_t kMaxSizet = std::numeric_limits<size_t>::max();
-
-#endif //_MSC_VER
-
-const bool kLittleEndian = true;
+// "Windows is designed to run on little-endian computer architectures."
+// https://docs.microsoft.com/en-us/windows/win32/sysinfo/registry-value-types
+constexpr bool kLittleEndian = true;
+#undef PLATFORM_IS_LITTLE_ENDIAN
 
 class CondVar;
 
 class Mutex {
  public:
+  static const char* kName() { return "std::mutex"; }
 
-   /* implicit */ Mutex(bool adaptive = false)
+  explicit Mutex(bool IGNORED_adaptive = kDefaultToAdaptiveMutex)
 #ifndef NDEBUG
-     : locked_(false)
+      : locked_(false)
 #endif
-   { }
+  {
+    (void)IGNORED_adaptive;
+  }
 
   ~Mutex();
 
@@ -145,25 +105,37 @@ class Mutex {
     mutex_.unlock();
   }
 
+  bool TryLock() {
+    bool ret = mutex_.try_lock();
+#ifndef NDEBUG
+    if (ret) {
+      locked_ = true;
+    }
+#endif
+    return ret;
+  }
+
   // this will assert if the mutex is not locked
   // it does NOT verify that mutex is held by a calling thread
-  void AssertHeld() {
+  void AssertHeld() const {
 #ifndef NDEBUG
     assert(locked_);
 #endif
   }
+
+  // Also implement std Lockable
+  inline void lock() { Lock(); }
+  inline void unlock() { Unlock(); }
+  inline bool try_lock() { return TryLock(); }
 
   // Mutex is move only with lock ownership transfer
   Mutex(const Mutex&) = delete;
   void operator=(const Mutex&) = delete;
 
  private:
-
   friend class CondVar;
 
-  std::mutex& getLock() {
-    return mutex_;
-  }
+  std::mutex& getLock() { return mutex_; }
 
   std::mutex mutex_;
 #ifndef NDEBUG
@@ -174,6 +146,9 @@ class Mutex {
 class RWMutex {
  public:
   RWMutex() { InitializeSRWLock(&srwLock_); }
+  // No copying allowed
+  RWMutex(const RWMutex&) = delete;
+  void operator=(const RWMutex&) = delete;
 
   void ReadLock() { AcquireSRWLockShared(&srwLock_); }
 
@@ -184,21 +159,20 @@ class RWMutex {
   void WriteUnlock() { ReleaseSRWLockExclusive(&srwLock_); }
 
   // Empty as in POSIX
-  void AssertHeld() {}
+  void AssertHeld() const {}
 
  private:
   SRWLOCK srwLock_;
-  // No copying allowed
-  RWMutex(const RWMutex&);
-  void operator=(const RWMutex&);
 };
 
 class CondVar {
  public:
-  explicit CondVar(Mutex* mu) : mu_(mu) {
-  }
+  explicit CondVar(Mutex* mu) : mu_(mu) {}
 
   ~CondVar();
+
+  Mutex* GetMutex() const { return mu_; }
+
   void Wait();
   bool TimedWait(uint64_t expiration_time);
   void Signal();
@@ -216,27 +190,30 @@ class CondVar {
   Mutex* mu_;
 };
 
+#ifdef _POSIX_THREADS
+using Thread = std::thread;
+#else
 // Wrapper around the platform efficient
 // or otherwise preferrable implementation
 using Thread = WindowsThread;
+#endif
 
 // OnceInit type helps emulate
 // Posix semantics with initialization
 // adopted in the project
 struct OnceType {
+  struct Init {};
 
-    struct Init {};
+  OnceType() {}
+  OnceType(const Init&) {}
+  OnceType(const OnceType&) = delete;
+  OnceType& operator=(const OnceType&) = delete;
 
-    OnceType() {}
-    OnceType(const Init&) {}
-    OnceType(const OnceType&) = delete;
-    OnceType& operator=(const OnceType&) = delete;
-
-    std::once_flag flag_;
+  std::once_flag flag_;
 };
 
 #define LEVELDB_ONCE_INIT port::OnceType::Init()
-extern void InitOnce(OnceType* once, void (*initializer)());
+void InitOnce(OnceType* once, void (*initializer)());
 
 #ifndef CACHE_LINE_SIZE
 #define CACHE_LINE_SIZE 64U
@@ -244,11 +221,11 @@ extern void InitOnce(OnceType* once, void (*initializer)());
 
 #ifdef ROCKSDB_JEMALLOC
 // Separate inlines so they can be replaced if needed
-void* jemalloc_aligned_alloc(size_t size, size_t alignment) ROCKSDB_NOEXCEPT;
-void jemalloc_aligned_free(void* p) ROCKSDB_NOEXCEPT;
+void* jemalloc_aligned_alloc(size_t size, size_t alignment) noexcept;
+void jemalloc_aligned_free(void* p) noexcept;
 #endif
 
-inline void *cacheline_aligned_alloc(size_t size) {
+inline void* cacheline_aligned_alloc(size_t size) {
 #ifdef ROCKSDB_JEMALLOC
   return jemalloc_aligned_alloc(size, CACHE_LINE_SIZE);
 #else
@@ -256,7 +233,7 @@ inline void *cacheline_aligned_alloc(size_t size) {
 #endif
 }
 
-inline void cacheline_aligned_free(void *memblock) {
+inline void cacheline_aligned_free(void* memblock) {
 #ifdef ROCKSDB_JEMALLOC
   jemalloc_aligned_free(memblock);
 #else
@@ -264,25 +241,22 @@ inline void cacheline_aligned_free(void *memblock) {
 #endif
 }
 
-// https://gcc.gnu.org/bugzilla/show_bug.cgi?id=52991 for MINGW32
-// could not be worked around with by -mno-ms-bitfields
-#ifndef __MINGW32__
-#define ALIGN_AS(n) __declspec(align(n))
-#else
-#define ALIGN_AS(n)
-#endif
+extern const size_t kPageSize;
+
+// Part of C++11
+#define ALIGN_AS(n) alignas(n)
 
 static inline void AsmVolatilePause() {
-#if defined(_M_IX86) || defined(_M_X64)
+#if defined(_M_IX86) || defined(_M_X64) || defined(_M_ARM64) || defined(_M_ARM)
   YieldProcessor();
 #endif
   // it would be nice to get "wfe" on ARM here
 }
 
-extern int PhysicalCoreID();
+int PhysicalCoreID();
 
 // For Thread Local Storage abstraction
-typedef DWORD pthread_key_t;
+using pthread_key_t = DWORD;
 
 inline int pthread_key_create(pthread_key_t* key, void (*destructor)(void*)) {
   // Not used
@@ -329,18 +303,28 @@ inline void* pthread_getspecific(pthread_key_t key) {
 int truncate(const char* path, int64_t length);
 int Truncate(std::string path, int64_t length);
 void Crash(const std::string& srcfile, int srcline);
-extern int GetMaxOpenFiles();
+int GetMaxOpenFiles();
 std::string utf16_to_utf8(const std::wstring& utf16);
 std::wstring utf8_to_utf16(const std::string& utf8);
 
-}  // namespace port
+using ThreadId = int;
 
+void SetCpuPriority(ThreadId id, CpuPriority priority);
+
+int64_t GetProcessID();
+
+// Uses platform APIs to generate a 36-character RFC-4122 UUID. Returns
+// true on success or false on failure.
+bool GenerateRfcUuid(std::string* output);
+
+}  // namespace port
 
 #ifdef ROCKSDB_WINDOWS_UTF8_FILENAMES
 
 #define RX_FILESTRING std::wstring
-#define RX_FN(a) rocksdb::port::utf8_to_utf16(a)
-#define FN_TO_RX(a) rocksdb::port::utf16_to_utf8(a)
+#define RX_FN(a) ROCKSDB_NAMESPACE::port::utf8_to_utf16(a)
+#define FN_TO_RX(a) ROCKSDB_NAMESPACE::port::utf16_to_utf8(a)
+#define RX_FNCMP(a, b) ::wcscmp(a, RX_FN(b).c_str())
 #define RX_FNLEN(a) ::wcslen(a)
 
 #define RX_DeleteFile DeleteFileW
@@ -357,12 +341,15 @@ std::wstring utf8_to_utf16(const std::string& utf8);
 #define RX_CreateHardLink CreateHardLinkW
 #define RX_PathIsRelative PathIsRelativeW
 #define RX_GetCurrentDirectory GetCurrentDirectoryW
+#define RX_GetDiskFreeSpaceEx GetDiskFreeSpaceExW
+#define RX_PathIsDirectory PathIsDirectoryW
 
 #else
 
 #define RX_FILESTRING std::string
 #define RX_FN(a) a
 #define FN_TO_RX(a) a
+#define RX_FNCMP(a, b) strcmp(a, b)
 #define RX_FNLEN(a) strlen(a)
 
 #define RX_DeleteFile DeleteFileA
@@ -372,7 +359,7 @@ std::wstring utf8_to_utf16(const std::string& utf8);
 #define RX_FindFirstFileEx FindFirstFileExA
 #define RX_CreateDirectory CreateDirectoryA
 #define RX_FindNextFile FindNextFileA
-#define RX_WIN32_FIND_DATA WIN32_FIND_DATA
+#define RX_WIN32_FIND_DATA WIN32_FIND_DATAA
 #define RX_CreateDirectory CreateDirectoryA
 #define RX_RemoveDirectory RemoveDirectoryA
 #define RX_GetFileAttributesEx GetFileAttributesExA
@@ -380,14 +367,16 @@ std::wstring utf8_to_utf16(const std::string& utf8);
 #define RX_CreateHardLink CreateHardLinkA
 #define RX_PathIsRelative PathIsRelativeA
 #define RX_GetCurrentDirectory GetCurrentDirectoryA
+#define RX_GetDiskFreeSpaceEx GetDiskFreeSpaceExA
+#define RX_PathIsDirectory PathIsDirectoryA
 
 #endif
 
-using port::pthread_key_t;
+using port::pthread_getspecific;
 using port::pthread_key_create;
 using port::pthread_key_delete;
+using port::pthread_key_t;
 using port::pthread_setspecific;
-using port::pthread_getspecific;
 using port::truncate;
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

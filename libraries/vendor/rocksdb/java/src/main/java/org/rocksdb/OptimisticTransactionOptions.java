@@ -6,7 +6,7 @@
 package org.rocksdb;
 
 public class OptimisticTransactionOptions extends RocksObject
-    implements TransactionalOptions {
+    implements TransactionalOptions<OptimisticTransactionOptions> {
 
   public OptimisticTransactionOptions() {
     super(newOptimisticTransactionOptions());
@@ -37,17 +37,19 @@ public class OptimisticTransactionOptions extends RocksObject
    * @return this OptimisticTransactionOptions instance
    */
   public OptimisticTransactionOptions setComparator(
-      final AbstractComparator<? extends AbstractSlice<?>> comparator) {
+      final AbstractComparator comparator) {
     assert(isOwningHandle());
     setComparator(nativeHandle_, comparator.nativeHandle_);
     return this;
   }
 
-  private native static long newOptimisticTransactionOptions();
-  private native boolean isSetSnapshot(final long handle);
-  private native void setSetSnapshot(final long handle,
-      final boolean setSnapshot);
-  private native void setComparator(final long handle,
-      final long comparatorHandle);
-  @Override protected final native void disposeInternal(final long handle);
+  private static native long newOptimisticTransactionOptions();
+  private static native boolean isSetSnapshot(final long handle);
+  private static native void setSetSnapshot(final long handle, final boolean setSnapshot);
+  private static native void setComparator(final long handle, final long comparatorHandle);
+  @Override
+  protected final void disposeInternal(final long handle) {
+    disposeInternalJni(handle);
+  }
+  private static native void disposeInternalJni(final long handle);
 }

@@ -1,38 +1,42 @@
+// Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #pragma once
 
-#ifndef ROCKSDB_LITE
 #include <deque>
 #include <string>
 #include <vector>
 
-#include "rocksdb/db.h"
-#include "rocksdb/env.h"
+#include "db/db_impl/db_impl.h"
 #include "rocksdb/compaction_filter.h"
+#include "rocksdb/db.h"
 #include "rocksdb/merge_operator.h"
-#include "rocksdb/utilities/utility_db.h"
+#include "rocksdb/system_clock.h"
 #include "rocksdb/utilities/db_ttl.h"
-#include "db/db_impl.h"
+#include "utilities/compaction_filters/layered_compaction_filter_base.h"
 
 #ifdef _WIN32
 // Windows API macro interference
 #undef GetCurrentTime
 #endif
 
-
-namespace rocksdb {
-
+namespace ROCKSDB_NAMESPACE {
+struct ConfigOptions;
+class ObjectLibrary;
+class ObjectRegistry;
 class DBWithTTLImpl : public DBWithTTL {
  public:
   static void SanitizeOptions(int32_t ttl, ColumnFamilyOptions* options,
-                              Env* env);
+                              SystemClock* clock);
 
+  static void RegisterTtlClasses();
   explicit DBWithTTLImpl(DB* db);
 
   virtual ~DBWithTTLImpl();
+
+  Status Close() override;
 
   Status CreateColumnFamilyWithTtl(const ColumnFamilyOptions& options,
                                    const std::string& column_family_name,
@@ -44,44 +48,41 @@ class DBWithTTLImpl : public DBWithTTL {
                             ColumnFamilyHandle** handle) override;
 
   using StackableDB::Put;
-  virtual Status Put(const WriteOptions& options,
-                     ColumnFamilyHandle* column_family, const Slice& key,
-                     const Slice& val) override;
+  Status Put(const WriteOptions& options, ColumnFamilyHandle* column_family,
+             const Slice& key, const Slice& val) override;
 
   using StackableDB::Get;
-  virtual Status Get(const ReadOptions& options,
-                     ColumnFamilyHandle* column_family, const Slice& key,
-                     PinnableSlice* value) override;
+  Status Get(const ReadOptions& options, ColumnFamilyHandle* column_family,
+             const Slice& key, PinnableSlice* value,
+             std::string* timestamp) override;
 
   using StackableDB::MultiGet;
-  virtual std::vector<Status> MultiGet(
-      const ReadOptions& options,
-      const std::vector<ColumnFamilyHandle*>& column_family,
-      const std::vector<Slice>& keys,
-      std::vector<std::string>* values) override;
+  void MultiGet(const ReadOptions& options, const size_t num_keys,
+                ColumnFamilyHandle** column_families, const Slice* keys,
+                PinnableSlice* values, std::string* timestamps,
+                Status* statuses, const bool sorted_input) override;
 
   using StackableDB::KeyMayExist;
-  virtual bool KeyMayExist(const ReadOptions& options,
-                           ColumnFamilyHandle* column_family, const Slice& key,
-                           std::string* value,
-                           bool* value_found = nullptr) override;
+  bool KeyMayExist(const ReadOptions& options,
+                   ColumnFamilyHandle* column_family, const Slice& key,
+                   std::string* value, bool* value_found = nullptr) override;
 
   using StackableDB::Merge;
-  virtual Status Merge(const WriteOptions& options,
-                       ColumnFamilyHandle* column_family, const Slice& key,
-                       const Slice& value) override;
+  Status Merge(const WriteOptions& options, ColumnFamilyHandle* column_family,
+               const Slice& key, const Slice& value) override;
 
-  virtual Status Write(const WriteOptions& opts, WriteBatch* updates) override;
+  Status Write(const WriteOptions& opts, WriteBatch* updates) override;
 
   using StackableDB::NewIterator;
-  virtual Iterator* NewIterator(const ReadOptions& opts,
-                                ColumnFamilyHandle* column_family) override;
+  Iterator* NewIterator(const ReadOptions& _read_options,
+                        ColumnFamilyHandle* column_family) override;
 
-  virtual DB* GetBaseDB() override { return db_; }
+  DB* GetBaseDB() override { return db_; }
 
-  static bool IsStale(const Slice& value, int32_t ttl, Env* env);
+  static bool IsStale(const Slice& value, int32_t ttl, SystemClock* clock);
 
-  static Status AppendTS(const Slice& val, std::string* val_with_ts, Env* env);
+  static Status AppendTS(const Slice& val, std::string* val_with_ts,
+                         SystemClock* clock);
 
   static Status SanityCheckTimestamp(const Slice& str);
 
@@ -97,11 +98,14 @@ class DBWithTTLImpl : public DBWithTTL {
 
   void SetTtl(int32_t ttl) override { SetTtl(DefaultColumnFamily(), ttl); }
 
-  void SetTtl(ColumnFamilyHandle *h, int32_t ttl) override;
+  void SetTtl(ColumnFamilyHandle* h, int32_t ttl) override;
+
+ private:
+  // remember whether the Close completes or not
+  bool closed_;
 };
 
 class TtlIterator : public Iterator {
-
  public:
   explicit TtlIterator(Iterator* iter) : iter_(iter) { assert(iter_); }
 
@@ -123,7 +127,7 @@ class TtlIterator : public Iterator {
 
   Slice key() const override { return iter_->key(); }
 
-  int32_t timestamp() const {
+  int32_t ttl_timestamp() const {
     return DecodeFixed32(iter_->value().data() + iter_->value().size() -
                          DBWithTTLImpl::kTSLength);
   }
@@ -142,214 +146,94 @@ class TtlIterator : public Iterator {
   Iterator* iter_;
 };
 
-class TtlCompactionFilter : public CompactionFilter {
+class TtlCompactionFilter : public LayeredCompactionFilterBase {
  public:
-  TtlCompactionFilter(
-      int32_t ttl, Env* env, const CompactionFilter* user_comp_filter,
-      std::unique_ptr<const CompactionFilter> user_comp_filter_from_factory =
-          nullptr)
-      : ttl_(ttl),
-        env_(env),
-        user_comp_filter_(user_comp_filter),
-        user_comp_filter_from_factory_(
-            std::move(user_comp_filter_from_factory)) {
-    // Unlike the merge operator, compaction filter is necessary for TTL, hence
-    // this would be called even if user doesn't specify any compaction-filter
-    if (!user_comp_filter_) {
-      user_comp_filter_ = user_comp_filter_from_factory_.get();
+  TtlCompactionFilter(int32_t ttl, SystemClock* clock,
+                      const CompactionFilter* _user_comp_filter,
+                      std::unique_ptr<const CompactionFilter>
+                          _user_comp_filter_from_factory = nullptr);
+
+  bool Filter(int level, const Slice& key, const Slice& old_val,
+              std::string* new_val, bool* value_changed) const override;
+
+  const char* Name() const override { return kClassName(); }
+  static const char* kClassName() { return "TtlCompactionFilter"; }
+  bool IsInstanceOf(const std::string& name) const override {
+    if (name == "Delete By TTL") {
+      return true;
+    } else {
+      return LayeredCompactionFilterBase::IsInstanceOf(name);
     }
   }
 
-  virtual bool Filter(int level, const Slice& key, const Slice& old_val,
-                      std::string* new_val, bool* value_changed) const
-      override {
-    if (DBWithTTLImpl::IsStale(old_val, ttl_, env_)) {
-      return true;
-    }
-    if (user_comp_filter_ == nullptr) {
-      return false;
-    }
-    assert(old_val.size() >= DBWithTTLImpl::kTSLength);
-    Slice old_val_without_ts(old_val.data(),
-                             old_val.size() - DBWithTTLImpl::kTSLength);
-    if (user_comp_filter_->Filter(level, key, old_val_without_ts, new_val,
-                                  value_changed)) {
-      return true;
-    }
-    if (*value_changed) {
-      new_val->append(
-          old_val.data() + old_val.size() - DBWithTTLImpl::kTSLength,
-          DBWithTTLImpl::kTSLength);
-    }
-    return false;
-  }
-
-  virtual const char* Name() const override { return "Delete By TTL"; }
+  Status PrepareOptions(const ConfigOptions& config_options) override;
+  Status ValidateOptions(const DBOptions& db_opts,
+                         const ColumnFamilyOptions& cf_opts) const override;
 
  private:
   int32_t ttl_;
-  Env* env_;
-  const CompactionFilter* user_comp_filter_;
-  std::unique_ptr<const CompactionFilter> user_comp_filter_from_factory_;
+  SystemClock* clock_;
 };
 
 class TtlCompactionFilterFactory : public CompactionFilterFactory {
  public:
   TtlCompactionFilterFactory(
-      int32_t ttl, Env* env,
-      std::shared_ptr<CompactionFilterFactory> comp_filter_factory)
-      : ttl_(ttl), env_(env), user_comp_filter_factory_(comp_filter_factory) {}
+      int32_t ttl, SystemClock* clock,
+      std::shared_ptr<CompactionFilterFactory> comp_filter_factory);
 
-  virtual std::unique_ptr<CompactionFilter> CreateCompactionFilter(
-      const CompactionFilter::Context& context) override {
-    std::unique_ptr<const CompactionFilter> user_comp_filter_from_factory =
-        nullptr;
-    if (user_comp_filter_factory_) {
-      user_comp_filter_from_factory =
-          user_comp_filter_factory_->CreateCompactionFilter(context);
-    }
+  std::unique_ptr<CompactionFilter> CreateCompactionFilter(
+      const CompactionFilter::Context& context) override;
+  void SetTtl(int32_t ttl) { ttl_ = ttl; }
 
-    return std::unique_ptr<TtlCompactionFilter>(new TtlCompactionFilter(
-        ttl_, env_, nullptr, std::move(user_comp_filter_from_factory)));
-  }
-
-  void SetTtl(int32_t ttl) {
-    ttl_ = ttl;
-  }
-
-  virtual const char* Name() const override {
-    return "TtlCompactionFilterFactory";
+  const char* Name() const override { return kClassName(); }
+  static const char* kClassName() { return "TtlCompactionFilterFactory"; }
+  Status PrepareOptions(const ConfigOptions& config_options) override;
+  Status ValidateOptions(const DBOptions& db_opts,
+                         const ColumnFamilyOptions& cf_opts) const override;
+  const Customizable* Inner() const override {
+    return user_comp_filter_factory_.get();
   }
 
  private:
   int32_t ttl_;
-  Env* env_;
+  SystemClock* clock_;
   std::shared_ptr<CompactionFilterFactory> user_comp_filter_factory_;
 };
 
 class TtlMergeOperator : public MergeOperator {
-
  public:
   explicit TtlMergeOperator(const std::shared_ptr<MergeOperator>& merge_op,
-                            Env* env)
-      : user_merge_op_(merge_op), env_(env) {
-    assert(merge_op);
-    assert(env);
-  }
+                            SystemClock* clock);
 
-  virtual bool FullMergeV2(const MergeOperationInput& merge_in,
-                           MergeOperationOutput* merge_out) const override {
-    const uint32_t ts_len = DBWithTTLImpl::kTSLength;
-    if (merge_in.existing_value && merge_in.existing_value->size() < ts_len) {
-      ROCKS_LOG_ERROR(merge_in.logger,
-                      "Error: Could not remove timestamp from existing value.");
-      return false;
-    }
+  bool FullMergeV2(const MergeOperationInput& merge_in,
+                   MergeOperationOutput* merge_out) const override;
 
-    // Extract time-stamp from each operand to be passed to user_merge_op_
-    std::vector<Slice> operands_without_ts;
-    for (const auto& operand : merge_in.operand_list) {
-      if (operand.size() < ts_len) {
-        ROCKS_LOG_ERROR(
-            merge_in.logger,
-            "Error: Could not remove timestamp from operand value.");
-        return false;
-      }
-      operands_without_ts.push_back(operand);
-      operands_without_ts.back().remove_suffix(ts_len);
-    }
+  bool PartialMergeMulti(const Slice& key,
+                         const std::deque<Slice>& operand_list,
+                         std::string* new_value, Logger* logger) const override;
 
-    // Apply the user merge operator (store result in *new_value)
-    bool good = true;
-    MergeOperationOutput user_merge_out(merge_out->new_value,
-                                        merge_out->existing_operand);
-    if (merge_in.existing_value) {
-      Slice existing_value_without_ts(merge_in.existing_value->data(),
-                                      merge_in.existing_value->size() - ts_len);
-      good = user_merge_op_->FullMergeV2(
-          MergeOperationInput(merge_in.key, &existing_value_without_ts,
-                              operands_without_ts, merge_in.logger),
-          &user_merge_out);
-    } else {
-      good = user_merge_op_->FullMergeV2(
-          MergeOperationInput(merge_in.key, nullptr, operands_without_ts,
-                              merge_in.logger),
-          &user_merge_out);
-    }
+  static const char* kClassName() { return "TtlMergeOperator"; }
 
-    // Return false if the user merge operator returned false
-    if (!good) {
-      return false;
-    }
-
-    if (merge_out->existing_operand.data()) {
-      merge_out->new_value.assign(merge_out->existing_operand.data(),
-                                  merge_out->existing_operand.size());
-      merge_out->existing_operand = Slice(nullptr, 0);
-    }
-
-    // Augment the *new_value with the ttl time-stamp
-    int64_t curtime;
-    if (!env_->GetCurrentTime(&curtime).ok()) {
-      ROCKS_LOG_ERROR(
-          merge_in.logger,
-          "Error: Could not get current time to be attached internally "
-          "to the new value.");
-      return false;
-    } else {
-      char ts_string[ts_len];
-      EncodeFixed32(ts_string, (int32_t)curtime);
-      merge_out->new_value.append(ts_string, ts_len);
+  const char* Name() const override { return kClassName(); }
+  bool IsInstanceOf(const std::string& name) const override {
+    if (name == "Merge By TTL") {
       return true;
-    }
-  }
-
-  virtual bool PartialMergeMulti(const Slice& key,
-                                 const std::deque<Slice>& operand_list,
-                                 std::string* new_value, Logger* logger) const
-      override {
-    const uint32_t ts_len = DBWithTTLImpl::kTSLength;
-    std::deque<Slice> operands_without_ts;
-
-    for (const auto& operand : operand_list) {
-      if (operand.size() < ts_len) {
-        ROCKS_LOG_ERROR(logger,
-                        "Error: Could not remove timestamp from value.");
-        return false;
-      }
-
-      operands_without_ts.push_back(
-          Slice(operand.data(), operand.size() - ts_len));
-    }
-
-    // Apply the user partial-merge operator (store result in *new_value)
-    assert(new_value);
-    if (!user_merge_op_->PartialMergeMulti(key, operands_without_ts, new_value,
-                                           logger)) {
-      return false;
-    }
-
-    // Augment the *new_value with the ttl time-stamp
-    int64_t curtime;
-    if (!env_->GetCurrentTime(&curtime).ok()) {
-      ROCKS_LOG_ERROR(
-          logger,
-          "Error: Could not get current time to be attached internally "
-          "to the new value.");
-      return false;
     } else {
-      char ts_string[ts_len];
-      EncodeFixed32(ts_string, (int32_t)curtime);
-      new_value->append(ts_string, ts_len);
-      return true;
+      return MergeOperator::IsInstanceOf(name);
     }
   }
 
-  virtual const char* Name() const override { return "Merge By TTL"; }
+  Status PrepareOptions(const ConfigOptions& config_options) override;
+  Status ValidateOptions(const DBOptions& db_opts,
+                         const ColumnFamilyOptions& cf_opts) const override;
+  const Customizable* Inner() const override { return user_merge_op_.get(); }
 
  private:
   std::shared_ptr<MergeOperator> user_merge_op_;
-  Env* env_;
+  SystemClock* clock_;
 };
-}
-#endif  // ROCKSDB_LITE
+extern "C" {
+int RegisterTtlObjects(ObjectLibrary& library, const std::string& /*arg*/);
+}  // extern "C"
+
+}  // namespace ROCKSDB_NAMESPACE

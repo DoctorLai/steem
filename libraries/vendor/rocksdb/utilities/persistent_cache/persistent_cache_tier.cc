@@ -3,20 +3,14 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 //
-#ifndef ROCKSDB_LITE
-
-#ifndef __STDC_FORMAT_MACROS
-#define __STDC_FORMAT_MACROS
-#endif
 
 #include "utilities/persistent_cache/persistent_cache_tier.h"
 
-#include "inttypes.h"
-
-#include <string>
+#include <cinttypes>
 #include <sstream>
+#include <string>
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 std::string PersistentCacheConfig::ToString() const {
   std::string ret;
@@ -88,9 +82,9 @@ bool PersistentCacheTier::Erase(const Slice& /*key*/) {
 
 std::string PersistentCacheTier::PrintStats() {
   std::ostringstream os;
-  for (auto tier_stats : Stats()) {
+  for (const auto& tier_stats : Stats()) {
     os << "---- next tier -----" << std::endl;
-    for (auto stat : tier_stats) {
+    for (const auto& stat : tier_stats) {
       os << stat.first << ": " << stat.second << std::endl;
     }
   }
@@ -102,6 +96,10 @@ PersistentCache::StatsType PersistentCacheTier::Stats() {
     return next_tier_->Stats();
   }
   return PersistentCache::StatsType{};
+}
+
+uint64_t PersistentCacheTier::NewId() {
+  return last_id_.fetch_add(1, std::memory_order_relaxed);
 }
 
 //
@@ -163,6 +161,4 @@ bool PersistentTieredCache::IsCompressed() {
   return tiers_.front()->IsCompressed();
 }
 
-}  // namespace rocksdb
-
-#endif
+}  // namespace ROCKSDB_NAMESPACE

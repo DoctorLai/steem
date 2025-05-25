@@ -6,6 +6,7 @@
 #include <jni.h>
 #include <stdio.h>
 #include <stdlib.h>
+
 #include <memory>
 #include <string>
 
@@ -17,6 +18,7 @@
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/statistics.h"
 #include "rocksdb/table.h"
+#include "rocksjni/cplusplus_to_java_convert.h"
 #include "rocksjni/portal.h"
 #include "utilities/cassandra/merge_operator.h"
 
@@ -28,10 +30,10 @@
 jlong Java_org_rocksdb_CassandraValueMergeOperator_newSharedCassandraValueMergeOperator(
     JNIEnv* /*env*/, jclass /*jclazz*/, jint gcGracePeriodInSeconds,
     jint operands_limit) {
-  auto* op = new std::shared_ptr<rocksdb::MergeOperator>(
-      new rocksdb::cassandra::CassandraValueMergeOperator(
+  auto* op = new std::shared_ptr<ROCKSDB_NAMESPACE::MergeOperator>(
+      new ROCKSDB_NAMESPACE::cassandra::CassandraValueMergeOperator(
           gcGracePeriodInSeconds, operands_limit));
-  return reinterpret_cast<jlong>(op);
+  return GET_CPLUSPLUS_POINTER(op);
 }
 
 /*
@@ -39,9 +41,10 @@ jlong Java_org_rocksdb_CassandraValueMergeOperator_newSharedCassandraValueMergeO
  * Method:    disposeInternal
  * Signature: (J)V
  */
-void Java_org_rocksdb_CassandraValueMergeOperator_disposeInternal(
-    JNIEnv* /*env*/, jobject /*jobj*/, jlong jhandle) {
+void Java_org_rocksdb_CassandraValueMergeOperator_disposeInternalJni(
+    JNIEnv* /*env*/, jclass /*jcls*/, jlong jhandle) {
   auto* op =
-      reinterpret_cast<std::shared_ptr<rocksdb::MergeOperator>*>(jhandle);
+      reinterpret_cast<std::shared_ptr<ROCKSDB_NAMESPACE::MergeOperator>*>(
+          jhandle);
   delete op;
 }

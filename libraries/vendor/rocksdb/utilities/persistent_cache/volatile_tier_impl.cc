@@ -3,13 +3,12 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 //
-#ifndef ROCKSDB_LITE
 
 #include "utilities/persistent_cache/volatile_tier_impl.h"
 
 #include <string>
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 void VolatileCacheTier::DeleteCacheData(VolatileCacheTier::CacheData* data) {
   assert(data);
@@ -122,8 +121,10 @@ bool VolatileCacheTier::Evict() {
 
   // push the evicted object to the next level
   if (next_tier()) {
-    next_tier()->Insert(Slice(edata->key), edata->value.c_str(),
-                        edata->value.size());
+    // TODO: Should the insert error be ignored?
+    Status s = next_tier()->Insert(Slice(edata->key), edata->value.c_str(),
+                                   edata->value.size());
+    s.PermitUncheckedError();
   }
 
   // adjust size and destroy data
@@ -133,6 +134,4 @@ bool VolatileCacheTier::Evict() {
   return true;
 }
 
-}  // namespace rocksdb
-
-#endif
+}  // namespace ROCKSDB_NAMESPACE

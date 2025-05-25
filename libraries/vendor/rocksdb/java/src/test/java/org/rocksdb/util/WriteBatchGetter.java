@@ -1,3 +1,4 @@
+// Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 package org.rocksdb.util;
 
 import org.rocksdb.RocksDBException;
@@ -128,6 +129,11 @@ public class WriteBatchGetter extends WriteBatch.Handler {
 
   @Override
   public void markCommit(final byte[] xid) throws RocksDBException {
+    throw new UnsupportedOperationException();
+  }
+
+  @Override
+  public void markCommitWithTimestamp(final byte[] xid, final byte[] ts) throws RocksDBException {
     throw new UnsupportedOperationException();
   }
 }

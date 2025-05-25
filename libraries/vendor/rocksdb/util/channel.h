@@ -10,7 +10,9 @@
 #include <queue>
 #include <utility>
 
-namespace rocksdb {
+#include "rocksdb/rocksdb_namespace.h"
+
+namespace ROCKSDB_NAMESPACE {
 
 template <class T>
 class channel {
@@ -60,8 +62,8 @@ class channel {
 
  private:
   std::condition_variable cv_;
-  std::mutex lock_;
+  mutable std::mutex lock_;
   std::queue<T> buffer_;
   bool eof_;
 };
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

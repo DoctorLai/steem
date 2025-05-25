@@ -13,15 +13,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class MemTableTest {
 
   @ClassRule
-  public static final RocksMemoryResource rocksMemoryResource =
-      new RocksMemoryResource();
+  public static final RocksNativeLibraryResource ROCKS_NATIVE_LIBRARY_RESOURCE =
+      new RocksNativeLibraryResource();
 
   @Test
   public void hashSkipListMemTable() throws RocksDBException {
     try(final Options options = new Options()) {
       // Test HashSkipListMemTableConfig
-      HashSkipListMemTableConfig memTableConfig =
-          new HashSkipListMemTableConfig();
+      final HashSkipListMemTableConfig memTableConfig = new HashSkipListMemTableConfig();
       assertThat(memTableConfig.bucketCount()).
           isEqualTo(1000000);
       memTableConfig.setBucketCount(2000000);
@@ -44,8 +43,7 @@ public class MemTableTest {
   @Test
   public void skipListMemTable() throws RocksDBException {
     try(final Options options = new Options()) {
-      SkipListMemTableConfig skipMemTableConfig =
-          new SkipListMemTableConfig();
+      final SkipListMemTableConfig skipMemTableConfig = new SkipListMemTableConfig();
       assertThat(skipMemTableConfig.lookahead()).
           isEqualTo(0);
       skipMemTableConfig.setLookahead(20);
@@ -58,7 +56,7 @@ public class MemTableTest {
   @Test
   public void hashLinkedListMemTable() throws RocksDBException {
     try(final Options options = new Options()) {
-      HashLinkedListMemTableConfig hashLinkedListMemTableConfig =
+      final HashLinkedListMemTableConfig hashLinkedListMemTableConfig =
           new HashLinkedListMemTableConfig();
       assertThat(hashLinkedListMemTableConfig.bucketCount()).
           isEqualTo(50000);
@@ -98,8 +96,7 @@ public class MemTableTest {
   @Test
   public void vectorMemTable() throws RocksDBException {
     try(final Options options = new Options()) {
-      VectorMemTableConfig vectorMemTableConfig =
-          new VectorMemTableConfig();
+      final VectorMemTableConfig vectorMemTableConfig = new VectorMemTableConfig();
       assertThat(vectorMemTableConfig.reservedSize()).
           isEqualTo(0);
       vectorMemTableConfig.setReservedSize(123);

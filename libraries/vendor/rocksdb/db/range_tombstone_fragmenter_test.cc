@@ -6,10 +6,12 @@
 #include "db/range_tombstone_fragmenter.h"
 
 #include "db/db_test_util.h"
+#include "db/dbformat.h"
 #include "rocksdb/comparator.h"
-#include "util/testutil.h"
+#include "test_util/testutil.h"
+#include "util/vector_iterator.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class RangeTombstoneFragmenterTest : public testing::Test {};
 
@@ -25,8 +27,8 @@ std::unique_ptr<InternalIterator> MakeRangeDelIter(
     keys.push_back(key_and_value.first.Encode().ToString());
     values.push_back(key_and_value.second.ToString());
   }
-  return std::unique_ptr<test::VectorIterator>(
-      new test::VectorIterator(keys, values));
+  return std::unique_ptr<VectorIterator>(
+      new VectorIterator(keys, values, &bytewise_icmp));
 }
 
 void CheckIterPosition(const RangeTombstone& tombstone,
@@ -352,7 +354,7 @@ TEST_F(RangeTombstoneFragmenterTest,
 
   FragmentedRangeTombstoneList fragment_list(
       std::move(range_del_iter), bytewise_icmp, true /* for_compaction */,
-      {20, 9} /* upper_bounds */);
+      {9, 20} /* snapshots */);
   FragmentedRangeTombstoneIterator iter(&fragment_list, bytewise_icmp,
                                         kMaxSequenceNumber /* upper_bound */);
   VerifyFragmentedRangeDels(&iter, {{"a", "c", 10},
@@ -544,9 +546,10 @@ TEST_F(RangeTombstoneFragmenterTest, SeekOutOfBounds) {
                     {{"", {}, true /* out of range */}, {"z", {"l", "n", 4}}});
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
+  ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

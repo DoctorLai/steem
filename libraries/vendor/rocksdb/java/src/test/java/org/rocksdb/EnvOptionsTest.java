@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 public class EnvOptionsTest {
   @ClassRule
-  public static final RocksMemoryResource rocksMemoryResource = new RocksMemoryResource();
+  public static final RocksNativeLibraryResource ROCKS_NATIVE_LIBRARY_RESOURCE = new RocksNativeLibraryResource();
 
   public static final Random rand = PlatformRandomHelper.getPlatformSpecificRandomFactory();
 
@@ -105,25 +105,16 @@ public class EnvOptionsTest {
   @Test
   public void compactionReadaheadSize() {
     try (final EnvOptions envOptions = new EnvOptions()) {
-      final int intValue = rand.nextInt();
+      final int intValue = rand.nextInt(2147483647);
       envOptions.setCompactionReadaheadSize(intValue);
       assertThat(envOptions.compactionReadaheadSize()).isEqualTo(intValue);
     }
   }
 
   @Test
-  public void randomAccessMaxBufferSize() {
-    try (final EnvOptions envOptions = new EnvOptions()) {
-      final int intValue = rand.nextInt();
-      envOptions.setRandomAccessMaxBufferSize(intValue);
-      assertThat(envOptions.randomAccessMaxBufferSize()).isEqualTo(intValue);
-    }
-  }
-
-  @Test
   public void writableFileMaxBufferSize() {
     try (final EnvOptions envOptions = new EnvOptions()) {
-      final int intValue = rand.nextInt();
+      final int intValue = rand.nextInt(2147483647);
       envOptions.setWritableFileMaxBufferSize(intValue);
       assertThat(envOptions.writableFileMaxBufferSize()).isEqualTo(intValue);
     }

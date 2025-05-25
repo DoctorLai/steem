@@ -11,7 +11,7 @@
 
 #include "table/internal_iterator.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 // PinnedIteratorsManager will be notified whenever we need to pin an Iterator
 // and it will be responsible for deleting pinned Iterators when they are
@@ -24,6 +24,11 @@ class PinnedIteratorsManager : public Cleanable {
       ReleasePinnedData();
     }
   }
+
+  // Move constructor and move assignment is allowed.
+  PinnedIteratorsManager(PinnedIteratorsManager&& other) noexcept = default;
+  PinnedIteratorsManager& operator=(PinnedIteratorsManager&& other) noexcept =
+      default;
 
   // Enable Iterators pinning
   void StartPinning() {
@@ -43,7 +48,7 @@ class PinnedIteratorsManager : public Cleanable {
     }
   }
 
-  typedef void (*ReleaseFunction)(void* arg1);
+  using ReleaseFunction = void (*)(void* arg1);
   void PinPtr(void* ptr, ReleaseFunction release_func) {
     assert(pinning_enabled);
     if (ptr == nullptr) {
@@ -73,15 +78,15 @@ class PinnedIteratorsManager : public Cleanable {
 
  private:
   static void ReleaseInternalIterator(void* ptr) {
-    delete reinterpret_cast<InternalIterator*>(ptr);
+    delete static_cast<InternalIterator*>(ptr);
   }
 
   static void ReleaseArenaInternalIterator(void* ptr) {
-    reinterpret_cast<InternalIterator*>(ptr)->~InternalIterator();
+    static_cast<InternalIterator*>(ptr)->~InternalIterator();
   }
 
   bool pinning_enabled;
   std::vector<std::pair<void*, ReleaseFunction>> pinned_ptrs_;
 };
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

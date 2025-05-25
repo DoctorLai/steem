@@ -20,6 +20,8 @@ public class CompactionJobInfo extends RocksObject {
    */
   private CompactionJobInfo(final long nativeHandle) {
     super(nativeHandle);
+    // We do not own the native object!
+    disOwnNativeHandle();
   }
 
   /**
@@ -96,7 +98,7 @@ public class CompactionJobInfo extends RocksObject {
 
   /**
    * Get the table properties for the input and output tables.
-   *
+   * <p>
    * The map is keyed by values from {@link #inputFiles()} and
    *     {@link #outputFiles()}.
    *
@@ -141,7 +143,11 @@ public class CompactionJobInfo extends RocksObject {
 
 
   private static native long newCompactionJobInfo();
-  @Override protected native void disposeInternal(final long handle);
+  @Override
+  protected void disposeInternal(final long handle) {
+    disposeInternalJni(handle);
+  }
+  private static native void disposeInternalJni(final long handle);
 
   private static native byte[] columnFamilyName(final long handle);
   private static native Status status(final long handle);

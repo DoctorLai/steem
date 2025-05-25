@@ -6,7 +6,8 @@
 package org.rocksdb;
 
 
-interface TransactionalOptions extends AutoCloseable {
+interface TransactionalOptions<T extends TransactionalOptions<T>>
+    extends AutoCloseable {
 
   /**
    * True indicates snapshots will be set, just like if
@@ -19,13 +20,12 @@ interface TransactionalOptions extends AutoCloseable {
   /**
    * Setting the setSnapshot to true is the same as calling
    * {@link Transaction#setSnapshot()}.
-   *
+   * <p>
    * Default: false
    *
-   * @param <T> The type of transactional options.
    * @param setSnapshot Whether to set a snapshot
    *
    * @return this TransactionalOptions instance
    */
-  <T extends TransactionalOptions> T setSetSnapshot(final boolean setSnapshot);
+  T setSetSnapshot(final boolean setSnapshot);
 }

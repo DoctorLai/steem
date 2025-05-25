@@ -4,24 +4,23 @@
 //  (found in the LICENSE.Apache file in the root directory).
 //
 
-#ifndef ROCKSDB_LITE
-
-#include "db/db_impl.h"
+#include "db/db_impl/db_impl.h"
 #include "db/version_set.h"
 #include "rocksdb/db.h"
 #include "rocksdb/utilities/ldb_cmd.h"
+#include "test_util/testharness.h"
+#include "test_util/testutil.h"
 #include "tools/ldb_cmd_impl.h"
+#include "util/cast_util.h"
 #include "util/string_util.h"
-#include "util/testharness.h"
-#include "util/testutil.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class ReduceLevelTest : public testing::Test {
-public:
+ public:
   ReduceLevelTest() {
     dbname_ = test::PerThreadDBPath("db_reduce_levels_test");
-    DestroyDB(dbname_, Options());
+    EXPECT_OK(DestroyDB(dbname_, Options()));
     db_ = nullptr;
   }
 
@@ -47,12 +46,12 @@ public:
     if (db_ == nullptr) {
       return Status::InvalidArgument("DB not opened.");
     }
-    DBImpl* db_impl = reinterpret_cast<DBImpl*>(db_);
+    DBImpl* db_impl = static_cast_with_check<DBImpl>(db_);
     return db_impl->TEST_FlushMemTable();
   }
 
   void MoveL0FileToLevel(int level) {
-    DBImpl* db_impl = reinterpret_cast<DBImpl*>(db_);
+    DBImpl* db_impl = static_cast_with_check<DBImpl>(db_);
     for (int i = 0; i < level; ++i) {
       ASSERT_OK(db_impl->TEST_CompactRange(i, nullptr, nullptr));
     }
@@ -70,20 +69,22 @@ public:
   int FilesOnLevel(int level) {
     std::string property;
     EXPECT_TRUE(db_->GetProperty(
-        "rocksdb.num-files-at-level" + NumberToString(level), &property));
+        "rocksdb.num-files-at-level" + std::to_string(level), &property));
     return atoi(property.c_str());
   }
 
-private:
+ private:
   std::string dbname_;
   DB* db_;
 };
 
 Status ReduceLevelTest::OpenDB(bool create_if_missing, int num_levels) {
-  rocksdb::Options opt;
+  ROCKSDB_NAMESPACE::Options opt;
+  opt.level_compaction_dynamic_level_bytes = false;
   opt.num_levels = num_levels;
   opt.create_if_missing = create_if_missing;
-  rocksdb::Status st = rocksdb::DB::Open(opt, dbname_, &db_);
+  ROCKSDB_NAMESPACE::Status st =
+      ROCKSDB_NAMESPACE::DB::Open(opt, dbname_, &db_);
   if (!st.ok()) {
     fprintf(stderr, "Can't open the db:%s\n", st.ToString().c_str());
   }
@@ -91,8 +92,9 @@ Status ReduceLevelTest::OpenDB(bool create_if_missing, int num_levels) {
 }
 
 bool ReduceLevelTest::ReduceLevels(int target_level) {
-  std::vector<std::string> args = rocksdb::ReduceDBLevelsCommand::PrepareArgs(
-      dbname_, target_level, false);
+  std::vector<std::string> args =
+      ROCKSDB_NAMESPACE::ReduceDBLevelsCommand::PrepareArgs(
+          dbname_, target_level, false);
   LDBCommand* level_reducer = LDBCommand::InitFromCmdLineArgs(
       args, Options(), LDBOptions(), nullptr, LDBCommand::SelectCommand);
   level_reducer->Run();
@@ -104,7 +106,7 @@ bool ReduceLevelTest::ReduceLevels(int target_level) {
 TEST_F(ReduceLevelTest, Last_Level) {
   ASSERT_OK(OpenDB(true, 4));
   ASSERT_OK(Put("aaaa", "11111"));
-  Flush();
+  ASSERT_OK(Flush());
   MoveL0FileToLevel(3);
   ASSERT_EQ(FilesOnLevel(3), 1);
   CloseDB();
@@ -123,7 +125,7 @@ TEST_F(ReduceLevelTest, Last_Level) {
 TEST_F(ReduceLevelTest, Top_Level) {
   ASSERT_OK(OpenDB(true, 5));
   ASSERT_OK(Put("aaaa", "11111"));
-  Flush();
+  ASSERT_OK(Flush());
   ASSERT_EQ(FilesOnLevel(0), 1);
   CloseDB();
 
@@ -200,19 +202,10 @@ TEST_F(ReduceLevelTest, All_Levels) {
   CloseDB();
 }
 
-}
+}  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
+  ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
-
-#else
-#include <stdio.h>
-
-int main(int /*argc*/, char** /*argv*/) {
-  fprintf(stderr, "SKIPPED as LDBCommand is not supported in ROCKSDB_LITE\n");
-  return 0;
-}
-
-#endif  // !ROCKSDB_LITE

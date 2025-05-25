@@ -7,9 +7,11 @@
 // org.rocksdb.AbstractTableFilter.
 
 #include <jni.h>
+
 #include <memory>
 
 #include "include/org_rocksdb_AbstractTableFilter.h"
+#include "rocksjni/cplusplus_to_java_convert.h"
 #include "rocksjni/table_filter_jnicallback.h"
 
 /*
@@ -20,6 +22,6 @@
 jlong Java_org_rocksdb_AbstractTableFilter_createNewTableFilter(
     JNIEnv* env, jobject jtable_filter) {
   auto* table_filter_jnicallback =
-      new rocksdb::TableFilterJniCallback(env, jtable_filter);
-  return reinterpret_cast<jlong>(table_filter_jnicallback);
+      new ROCKSDB_NAMESPACE::TableFilterJniCallback(env, jtable_filter);
+  return GET_CPLUSPLUS_POINTER(table_filter_jnicallback);
 }

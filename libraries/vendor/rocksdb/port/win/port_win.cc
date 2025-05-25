@@ -7,40 +7,42 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#if !defined(OS_WIN) && !defined(WIN32) && !defined(_WIN32)
-#error Windows Specific Code
-#endif
+#if defined(OS_WIN)
 
 #include "port/win/port_win.h"
 
-#include <io.h>
-#include "port/dirent.h"
-#include "port/sys_time.h"
-
-#include <cstdlib>
-#include <stdio.h>
 #include <assert.h>
+#include <io.h>
+#include <rpc.h>
+#include <stdio.h>
 #include <string.h>
 
-#include <memory>
-#include <exception>
 #include <chrono>
+#include <cstdlib>
+#include <exception>
+#include <memory>
+
+#include "port/port_dirent.h"
+#include "port/sys_time.h"
 
 #ifdef ROCKSDB_WINDOWS_UTF8_FILENAMES
 // utf8 <-> utf16
-#include <string>
-#include <locale>
 #include <codecvt>
+#include <locale>
+#include <string>
 #endif
 
-#include "util/logging.h"
+#include "logging/logging.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
+
+const bool kDefaultToAdaptiveMutex = false;
+
 namespace port {
 
 #ifdef ROCKSDB_WINDOWS_UTF8_FILENAMES
 std::string utf16_to_utf8(const std::wstring& utf16) {
-  std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>,wchar_t> convert;
+  std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t> convert;
   return convert.to_bytes(utf16);
 }
 
@@ -50,17 +52,18 @@ std::wstring utf8_to_utf16(const std::string& utf8) {
 }
 #endif
 
-void gettimeofday(struct timeval* tv, struct timezone* /* tz */) {
-  using namespace std::chrono;
+void GetTimeOfDay(TimeVal* tv, struct timezone* /* tz */) {
+  std::chrono::microseconds usNow(
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          std::chrono::system_clock::now().time_since_epoch()));
 
-  microseconds usNow(
-      duration_cast<microseconds>(system_clock::now().time_since_epoch()));
-
-  seconds secNow(duration_cast<seconds>(usNow));
+  std::chrono::seconds secNow(
+      std::chrono::duration_cast<std::chrono::seconds>(usNow));
 
   tv->tv_sec = static_cast<long>(secNow.count());
-  tv->tv_usec = static_cast<long>(usNow.count() -
-      duration_cast<microseconds>(secNow).count());
+  tv->tv_usec = static_cast<long>(
+      usNow.count() -
+      std::chrono::duration_cast<std::chrono::microseconds>(secNow).count());
 }
 
 Mutex::~Mutex() {}
@@ -83,20 +86,29 @@ void CondVar::Wait() {
 }
 
 bool CondVar::TimedWait(uint64_t abs_time_us) {
-
-  using namespace std::chrono;
-
   // MSVC++ library implements wait_until in terms of wait_for so
   // we need to convert absolute wait into relative wait.
-  microseconds usAbsTime(abs_time_us);
+  std::chrono::microseconds usAbsTime(abs_time_us);
 
-  microseconds usNow(
-    duration_cast<microseconds>(system_clock::now().time_since_epoch()));
-  microseconds relTimeUs =
-    (usAbsTime > usNow) ? (usAbsTime - usNow) : microseconds::zero();
+  std::chrono::microseconds usNow(
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          std::chrono::system_clock::now().time_since_epoch()));
+  std::chrono::microseconds relTimeUs = (usAbsTime > usNow)
+                                            ? (usAbsTime - usNow)
+                                            : std::chrono::microseconds::zero();
 
   // Caller must ensure that mutex is held prior to calling this method
   std::unique_lock<std::mutex> lk(mu_->getLock(), std::adopt_lock);
+
+  // Work around https://github.com/microsoft/STL/issues/369
+  // std::condition_variable_any::wait_for had a fix, but
+  // std::condition_variable still doesn't have a fix in STL yet
+#if defined(_MSC_VER)
+  if (relTimeUs == std::chrono::microseconds::zero()) {
+    lk.unlock();
+    lk.lock();
+  }
+#endif
 #ifndef NDEBUG
   mu_->locked_ = false;
 #endif
@@ -127,13 +139,12 @@ void InitOnce(OnceType* once, void (*initializer)()) {
 
 // Private structure, exposed only by pointer
 struct DIR {
-  HANDLE      handle_;
-  bool        firstread_;
+  HANDLE handle_;
+  bool firstread_;
   RX_WIN32_FIND_DATA data_;
   dirent entry_;
 
-  DIR() : handle_(INVALID_HANDLE_VALUE),
-    firstread_(true) {}
+  DIR() : handle_(INVALID_HANDLE_VALUE), firstread_(true) {}
 
   DIR(const DIR&) = delete;
   DIR& operator=(const DIR&) = delete;
@@ -156,20 +167,19 @@ DIR* opendir(const char* name) {
 
   std::unique_ptr<DIR> dir(new DIR);
 
-  dir->handle_ = RX_FindFirstFileEx(RX_FN(pattern).c_str(), 
-    FindExInfoBasic, // Do not want alternative name
-    &dir->data_,
-    FindExSearchNameMatch,
-    NULL, // lpSearchFilter
-    0);
+  dir->handle_ =
+      RX_FindFirstFileEx(RX_FN(pattern).c_str(),
+                         FindExInfoBasic,  // Do not want alternative name
+                         &dir->data_, FindExSearchNameMatch,
+                         NULL,  // lpSearchFilter
+                         0);
 
   if (dir->handle_ == INVALID_HANDLE_VALUE) {
     return nullptr;
   }
 
   RX_FILESTRING x(dir->data_.cFileName, RX_FNLEN(dir->data_.cFileName));
-  strcpy_s(dir->entry_.d_name, sizeof(dir->entry_.d_name), 
-           FN_TO_RX(x).c_str());
+  strcpy_s(dir->entry_.d_name, sizeof(dir->entry_.d_name), FN_TO_RX(x).c_str());
 
   return dir.release();
 }
@@ -192,7 +202,7 @@ struct dirent* readdir(DIR* dirp) {
   }
 
   RX_FILESTRING x(dirp->data_.cFileName, RX_FNLEN(dirp->data_.cFileName));
-  strcpy_s(dirp->entry_.d_name, sizeof(dirp->entry_.d_name), 
+  strcpy_s(dirp->entry_.d_name, sizeof(dirp->entry_.d_name),
            FN_TO_RX(x).c_str());
 
   return &dirp->entry_;
@@ -208,11 +218,10 @@ int truncate(const char* path, int64_t length) {
     errno = EFAULT;
     return -1;
   }
-  return rocksdb::port::Truncate(path, length);
+  return ROCKSDB_NAMESPACE::port::Truncate(path, length);
 }
 
 int Truncate(std::string path, int64_t len) {
-
   if (len < 0) {
     errno = EINVAL;
     return -1;
@@ -220,10 +229,10 @@ int Truncate(std::string path, int64_t len) {
 
   HANDLE hFile =
       RX_CreateFile(RX_FN(path).c_str(), GENERIC_READ | GENERIC_WRITE,
-                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                 NULL,           // Security attrs
-                 OPEN_EXISTING,  // Truncate existing file only
-                 FILE_ATTRIBUTE_NORMAL, NULL);
+                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                    NULL,           // Security attrs
+                    OPEN_EXISTING,  // Truncate existing file only
+                    FILE_ATTRIBUTE_NORMAL, NULL);
 
   if (INVALID_HANDLE_VALUE == hFile) {
     auto lastError = GetLastError();
@@ -259,5 +268,38 @@ void Crash(const std::string& srcfile, int srcline) {
 
 int GetMaxOpenFiles() { return -1; }
 
+// Assume 4KB page size
+const size_t kPageSize = 4U * 1024U;
+
+void SetCpuPriority(ThreadId id, CpuPriority priority) {
+  // Not supported
+  (void)id;
+  (void)priority;
+}
+
+int64_t GetProcessID() { return GetCurrentProcessId(); }
+
+bool GenerateRfcUuid(std::string* output) {
+  UUID uuid;
+  UuidCreateSequential(&uuid);
+
+  RPC_CSTR rpc_str;
+  auto status = UuidToStringA(&uuid, &rpc_str);
+  if (status != RPC_S_OK) {
+    return false;
+  }
+
+  // rpc_str is nul-terminated.
+  // reinterpret_cast for possible change between signed/unsigned char.
+  *output = reinterpret_cast<char*>(rpc_str);
+
+  status = RpcStringFreeA(&rpc_str);
+  assert(status == RPC_S_OK);
+
+  return true;
+}
+
 }  // namespace port
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
+
+#endif

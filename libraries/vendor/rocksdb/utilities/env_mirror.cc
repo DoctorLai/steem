@@ -1,3 +1,4 @@
+// Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 // Copyright (c) 2015, Red Hat, Inc.  All rights reserved.
 //  This source code is licensed under both the GPLv2 (found in the
 //  COPYING file in the root directory) and Apache 2.0 License
@@ -6,11 +7,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#ifndef ROCKSDB_LITE
-
 #include "rocksdb/utilities/env_mirror.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 // An implementation of Env that mirrors all work over two backend
 // Env's.  This is useful for debugging purposes.
@@ -26,13 +25,17 @@ class SequentialFileMirror : public SequentialFile {
     if (as == Status::OK()) {
       char* bscratch = new char[n];
       Slice bslice;
+#ifndef NDEBUG
       size_t off = 0;
+#endif
       size_t left = aslice.size();
       while (left) {
         Status bs = b_->Read(left, &bslice, bscratch);
+#ifndef NDEBUG
         assert(as == bs);
         assert(memcmp(bscratch, scratch + off, bslice.size()) == 0);
         off += bslice.size();
+#endif
         left -= bslice.size();
       }
       delete[] bscratch;
@@ -55,7 +58,7 @@ class SequentialFileMirror : public SequentialFile {
     Status bs = b_->InvalidateCache(offset, length);
     assert(as == bs);
     return as;
-  };
+  }
 };
 
 class RandomAccessFileMirror : public RandomAccessFile {
@@ -97,7 +100,8 @@ class WritableFileMirror : public WritableFile {
  public:
   std::unique_ptr<WritableFile> a_, b_;
   std::string fname;
-  explicit WritableFileMirror(std::string f) : fname(f) {}
+  explicit WritableFileMirror(std::string f, const EnvOptions& options)
+      : WritableFile(options), fname(f) {}
 
   Status Append(const Slice& data) override {
     Status as = a_->Append(data);
@@ -105,11 +109,20 @@ class WritableFileMirror : public WritableFile {
     assert(as == bs);
     return as;
   }
+  Status Append(const Slice& data,
+                const DataVerificationInfo& /* verification_info */) override {
+    return Append(data);
+  }
   Status PositionedAppend(const Slice& data, uint64_t offset) override {
     Status as = a_->PositionedAppend(data, offset);
     Status bs = b_->PositionedAppend(data, offset);
     assert(as == bs);
     return as;
+  }
+  Status PositionedAppend(
+      const Slice& data, uint64_t offset,
+      const DataVerificationInfo& /* verification_info */) override {
+    return PositionedAppend(data, offset);
   }
   Status Truncate(uint64_t size) override {
     Status as = a_->Truncate(size);
@@ -200,10 +213,11 @@ Status EnvMirror::NewSequentialFile(const std::string& f,
   Status as = a_->NewSequentialFile(f, &mf->a_, options);
   Status bs = b_->NewSequentialFile(f, &mf->b_, options);
   assert(as == bs);
-  if (as.ok())
+  if (as.ok()) {
     r->reset(mf);
-  else
+  } else {
     delete mf;
+  }
   return as;
 }
 
@@ -217,25 +231,29 @@ Status EnvMirror::NewRandomAccessFile(const std::string& f,
   Status as = a_->NewRandomAccessFile(f, &mf->a_, options);
   Status bs = b_->NewRandomAccessFile(f, &mf->b_, options);
   assert(as == bs);
-  if (as.ok())
+  if (as.ok()) {
     r->reset(mf);
-  else
+  } else {
     delete mf;
+  }
   return as;
 }
 
 Status EnvMirror::NewWritableFile(const std::string& f,
                                   std::unique_ptr<WritableFile>* r,
                                   const EnvOptions& options) {
-  if (f.find("/proc/") == 0) return a_->NewWritableFile(f, r, options);
-  WritableFileMirror* mf = new WritableFileMirror(f);
+  if (f.find("/proc/") == 0) {
+    return a_->NewWritableFile(f, r, options);
+  }
+  WritableFileMirror* mf = new WritableFileMirror(f, options);
   Status as = a_->NewWritableFile(f, &mf->a_, options);
   Status bs = b_->NewWritableFile(f, &mf->b_, options);
   assert(as == bs);
-  if (as.ok())
+  if (as.ok()) {
     r->reset(mf);
-  else
+  } else {
     delete mf;
+  }
   return as;
 }
 
@@ -243,18 +261,19 @@ Status EnvMirror::ReuseWritableFile(const std::string& fname,
                                     const std::string& old_fname,
                                     std::unique_ptr<WritableFile>* r,
                                     const EnvOptions& options) {
-  if (fname.find("/proc/") == 0)
+  if (fname.find("/proc/") == 0) {
     return a_->ReuseWritableFile(fname, old_fname, r, options);
-  WritableFileMirror* mf = new WritableFileMirror(fname);
+  }
+  WritableFileMirror* mf = new WritableFileMirror(fname, options);
   Status as = a_->ReuseWritableFile(fname, old_fname, &mf->a_, options);
   Status bs = b_->ReuseWritableFile(fname, old_fname, &mf->b_, options);
   assert(as == bs);
-  if (as.ok())
+  if (as.ok()) {
     r->reset(mf);
-  else
+  } else {
     delete mf;
+  }
   return as;
 }
 
-}  // namespace rocksdb
-#endif
+}  // namespace ROCKSDB_NAMESPACE

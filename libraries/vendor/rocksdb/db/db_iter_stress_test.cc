@@ -8,9 +8,9 @@
 #include "rocksdb/comparator.h"
 #include "rocksdb/options.h"
 #include "rocksdb/slice.h"
+#include "test_util/testharness.h"
 #include "util/random.h"
 #include "util/string_util.h"
-#include "util/testharness.h"
 #include "utilities/merge_operators.h"
 
 #ifdef GFLAGS
@@ -29,7 +29,7 @@ bool FLAGS_verbose = false;
 
 #endif
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class DBIteratorStressTest : public testing::Test {
  public:
@@ -50,7 +50,9 @@ struct Entry {
   bool visible = true;
 
   bool operator<(const Entry& e) const {
-    if (key != e.key) return key < e.key;
+    if (key != e.key) {
+      return key < e.key;
+    }
     return std::tie(sequence, type) > std::tie(e.sequence, e.type);
   }
 };
@@ -97,7 +99,8 @@ struct StressTestIterator : public InternalIterator {
 
   bool MaybeFail() {
     if (rnd->Next() >=
-        std::numeric_limits<uint64_t>::max() * error_probability) {
+        static_cast<double>(std::numeric_limits<uint64_t>::max()) *
+            error_probability) {
       return false;
     }
     if (rnd->Next() % 2) {
@@ -114,7 +117,8 @@ struct StressTestIterator : public InternalIterator {
 
   void MaybeMutate() {
     if (rnd->Next() >=
-        std::numeric_limits<uint64_t>::max() * mutation_probability) {
+        static_cast<double>(std::numeric_limits<uint64_t>::max()) *
+            mutation_probability) {
       return;
     }
     do {
@@ -126,8 +130,9 @@ struct StressTestIterator : public InternalIterator {
       if (data->hidden.empty()) {
         hide_probability = 1;
       }
-      bool do_hide =
-          rnd->Next() < std::numeric_limits<uint64_t>::max() * hide_probability;
+      bool do_hide = rnd->Next() <
+                     static_cast<double>(std::numeric_limits<uint64_t>::max()) *
+                         hide_probability;
       if (do_hide) {
         // Hide a random entry.
         size_t idx = rnd->Next() % data->entries.size();
@@ -174,7 +179,9 @@ struct StressTestIterator : public InternalIterator {
   }
 
   void SeekToFirst() override {
-    if (MaybeFail()) return;
+    if (MaybeFail()) {
+      return;
+    }
     MaybeMutate();
 
     status_ = Status::OK();
@@ -182,7 +189,9 @@ struct StressTestIterator : public InternalIterator {
     SkipForward();
   }
   void SeekToLast() override {
-    if (MaybeFail()) return;
+    if (MaybeFail()) {
+      return;
+    }
     MaybeMutate();
 
     status_ = Status::OK();
@@ -191,7 +200,9 @@ struct StressTestIterator : public InternalIterator {
   }
 
   void Seek(const Slice& target) override {
-    if (MaybeFail()) return;
+    if (MaybeFail()) {
+      return;
+    }
     MaybeMutate();
 
     status_ = Status::OK();
@@ -203,7 +214,9 @@ struct StressTestIterator : public InternalIterator {
     SkipForward();
   }
   void SeekForPrev(const Slice& target) override {
-    if (MaybeFail()) return;
+    if (MaybeFail()) {
+      return;
+    }
     MaybeMutate();
 
     status_ = Status::OK();
@@ -218,14 +231,18 @@ struct StressTestIterator : public InternalIterator {
 
   void Next() override {
     assert(Valid());
-    if (MaybeFail()) return;
+    if (MaybeFail()) {
+      return;
+    }
     MaybeMutate();
     ++iter;
     SkipForward();
   }
   void Prev() override {
     assert(Valid());
-    if (MaybeFail()) return;
+    if (MaybeFail()) {
+      return;
+    }
     MaybeMutate();
     --iter;
     SkipBackward();
@@ -315,7 +332,9 @@ struct ReferenceIterator {
         return false;
       }
       assert(e.sequence <= sequence);
-      if (!e.visible) continue;
+      if (!e.visible) {
+        continue;
+      }
       if (e.type == kTypeDeletion) {
         return false;
       }
@@ -336,11 +355,13 @@ struct ReferenceIterator {
         break;
       }
       assert(e.sequence <= sequence);
-      if (!e.visible) continue;
+      if (!e.visible) {
+        continue;
+      }
       if (e.type == kTypeDeletion) {
         break;
       }
-      operands.push_back(e.value);
+      operands.emplace_back(e.value);
       if (e.type == kTypeValue) {
         break;
       }
@@ -389,7 +410,7 @@ struct ReferenceIterator {
   }
 };
 
-}  // namespace
+}  // anonymous namespace
 
 // Use an internal iterator that sometimes returns errors and sometimes
 // adds/removes entries on the fly. Do random operations on a DBIter and
@@ -411,7 +432,7 @@ TEST_F(DBIteratorStressTest, StressTest) {
       a /= 10;
       ++len;
     }
-    std::string s = ToString(rnd.Next() % static_cast<uint64_t>(max_key));
+    std::string s = std::to_string(rnd.Next() % static_cast<uint64_t>(max_key));
     s.insert(0, len - (int)s.size(), '0');
     return s;
   };
@@ -441,12 +462,13 @@ TEST_F(DBIteratorStressTest, StressTest) {
           for (double mutation_probability : {0.01, 0.5}) {
             for (double target_hidden_fraction : {0.1, 0.5}) {
               std::string trace_str =
-                  "entries: " + ToString(num_entries) +
-                  ", key_space: " + ToString(key_space) +
-                  ", error_probability: " + ToString(error_probability) +
-                  ", mutation_probability: " + ToString(mutation_probability) +
+                  "entries: " + std::to_string(num_entries) +
+                  ", key_space: " + std::to_string(key_space) +
+                  ", error_probability: " + std::to_string(error_probability) +
+                  ", mutation_probability: " +
+                  std::to_string(mutation_probability) +
                   ", target_hidden_fraction: " +
-                  ToString(target_hidden_fraction);
+                  std::to_string(target_hidden_fraction);
               SCOPED_TRACE(trace_str);
               if (trace) {
                 std::cout << trace_str << std::endl;
@@ -467,7 +489,7 @@ TEST_F(DBIteratorStressTest, StressTest) {
                       types[rnd.Next() % (sizeof(types) / sizeof(types[0]))];
                 }
                 e.sequence = i;
-                e.value = "v" + ToString(i);
+                e.value = "v" + std::to_string(i);
                 ParsedInternalKey internal_key(e.key, e.sequence, e.type);
                 AppendInternalKey(&e.ikey, internal_key);
 
@@ -478,12 +500,11 @@ TEST_F(DBIteratorStressTest, StressTest) {
                 std::cout << "entries:";
                 for (size_t i = 0; i < data.entries.size(); ++i) {
                   Entry& e = data.entries[i];
-                  std::cout
-                      << "\n  idx " << i << ": \"" << e.key << "\": \""
-                      << e.value << "\" seq: " << e.sequence << " type: "
-                      << (e.type == kTypeValue
-                              ? "val"
-                              : e.type == kTypeDeletion ? "del" : "merge");
+                  std::cout << "\n  idx " << i << ": \"" << e.key << "\": \""
+                            << e.value << "\" seq: " << e.sequence << " type: "
+                            << (e.type == kTypeValue      ? "val"
+                                : e.type == kTypeDeletion ? "del"
+                                                          : "merge");
                 }
                 std::cout << std::endl;
               }
@@ -507,12 +528,11 @@ TEST_F(DBIteratorStressTest, StressTest) {
                   internal_iter->target_hidden_fraction =
                       target_hidden_fraction;
                   internal_iter->trace = trace;
-                  db_iter.reset(NewDBIterator(
-                      env_, ropt, ImmutableCFOptions(options),
+                  db_iter.reset(DBIter::NewIter(
+                      env_, ropt, ImmutableOptions(options),
                       MutableCFOptions(options), BytewiseComparator(),
-                      internal_iter, sequence,
-                      options.max_sequential_skip_in_iterations,
-                      nullptr /*read_callback*/));
+                      internal_iter, /*version=*/nullptr, sequence,
+                      nullptr /*read_callback*/, /*active_mem=*/nullptr));
                 }
 
                 // Do a random operation. It's important to do it on ref_it
@@ -585,15 +605,17 @@ TEST_F(DBIteratorStressTest, StressTest) {
 
                     // Check that the key moved in the right direction.
                     if (forward) {
-                      if (seek)
+                      if (seek) {
                         ASSERT_GE(db_iter->key().ToString(), old_key);
-                      else
+                      } else {
                         ASSERT_GT(db_iter->key().ToString(), old_key);
+                      }
                     } else {
-                      if (seek)
+                      if (seek) {
                         ASSERT_LE(db_iter->key().ToString(), old_key);
-                      else
+                      } else {
                         ASSERT_LT(db_iter->key().ToString(), old_key);
+                      }
                     }
 
                     if (ref_iter->Valid()) {
@@ -645,9 +667,10 @@ TEST_F(DBIteratorStressTest, StressTest) {
             << "\n  mutated on the fly: " << num_recently_removed << std::endl;
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
+  ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
   ParseCommandLineFlags(&argc, &argv, true);
   return RUN_ALL_TESTS();

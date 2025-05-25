@@ -1,4 +1,4 @@
-FROM ubuntu:18.04 as builder
+FROM ubuntu:18.04 AS builder
 
 # The default build params are for low memory mira version.
 # This usually are used as a witness node.

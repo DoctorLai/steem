@@ -10,10 +10,11 @@
 #include "util/coding.h"
 
 #include <algorithm>
+
 #include "rocksdb/slice.h"
 #include "rocksdb/slice_transform.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 // conversion' conversion from 'type1' to 'type2', possible loss of data
 #if defined(_MSC_VER)
@@ -86,4 +87,4 @@ const char* GetVarint64Ptr(const char* p, const char* limit, uint64_t* value) {
   return nullptr;
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

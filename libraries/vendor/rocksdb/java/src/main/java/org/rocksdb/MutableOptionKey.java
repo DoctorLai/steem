@@ -1,3 +1,4 @@
+// Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 package org.rocksdb;
 
 public interface MutableOptionKey {
@@ -7,7 +8,9 @@ public interface MutableOptionKey {
     INT,
     BOOLEAN,
     INT_ARRAY,
-    ENUM
+    ENUM,
+    STRING,
+
   }
 
   String name();

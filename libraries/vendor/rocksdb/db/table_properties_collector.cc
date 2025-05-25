@@ -9,7 +9,7 @@
 #include "util/coding.h"
 #include "util/string_util.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 namespace {
 
@@ -27,18 +27,26 @@ uint64_t GetUint64Property(const UserCollectedProperties& props,
   return GetVarint64(&raw, &val) ? val : 0;
 }
 
-}  // namespace
+}  // anonymous namespace
 
 Status UserKeyTablePropertiesCollector::InternalAdd(const Slice& key,
                                                     const Slice& value,
                                                     uint64_t file_size) {
   ParsedInternalKey ikey;
-  if (!ParseInternalKey(key, &ikey)) {
-    return Status::InvalidArgument("Invalid internal key");
+  Status s = ParseInternalKey(key, &ikey, false /* log_err_key */);  // TODO
+  if (!s.ok()) {
+    return s;
   }
 
   return collector_->AddUserKey(ikey.user_key, value, GetEntryType(ikey.type),
                                 ikey.sequence, file_size);
+}
+
+void UserKeyTablePropertiesCollector::BlockAdd(
+    uint64_t block_uncomp_bytes, uint64_t block_compressed_bytes_fast,
+    uint64_t block_compressed_bytes_slow) {
+  return collector_->BlockAdd(block_uncomp_bytes, block_compressed_bytes_fast,
+                              block_compressed_bytes_slow);
 }
 
 Status UserKeyTablePropertiesCollector::Finish(
@@ -46,13 +54,12 @@ Status UserKeyTablePropertiesCollector::Finish(
   return collector_->Finish(properties);
 }
 
-UserCollectedProperties
-UserKeyTablePropertiesCollector::GetReadableProperties() const {
+UserCollectedProperties UserKeyTablePropertiesCollector::GetReadableProperties()
+    const {
   return collector_->GetReadableProperties();
 }
 
-uint64_t GetDeletedKeys(
-    const UserCollectedProperties& props) {
+uint64_t GetDeletedKeys(const UserCollectedProperties& props) {
   bool property_present_ignored;
   return GetUint64Property(props, TablePropertiesNames::kDeletedKeys,
                            &property_present_ignored);
@@ -60,8 +67,8 @@ uint64_t GetDeletedKeys(
 
 uint64_t GetMergeOperands(const UserCollectedProperties& props,
                           bool* property_present) {
-  return GetUint64Property(
-      props, TablePropertiesNames::kMergeOperands, property_present);
+  return GetUint64Property(props, TablePropertiesNames::kMergeOperands,
+                           property_present);
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

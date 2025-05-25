@@ -407,6 +407,30 @@ public:
      * read or write the WebSocket handshakes. At this point the original
      * callback function is called.
      */
+
+    /// Finish constructing the transport
+    /**
+     * init_asio is called once immediately after construction to initialize
+     * Asio components to the io_service.
+     *
+     * @param io_service A pointer to the io_service to register with this
+     * connection
+     *
+     * @return Status code for the success or failure of the initialization
+     */
+    lib::error_code init_asio (io_service_ptr io_service) {
+        m_io_service = io_service;
+
+        if (config::enable_multithreading) {
+            m_strand.reset(new lib::asio::io_service::strand(*io_service));
+        }
+
+        lib::error_code ec = socket_con_type::init_asio(io_service, m_strand,
+            m_is_server);
+
+        return ec;
+    }
+
 protected:
     void init(init_handler callback) {
         if (m_alog->static_test(log::alevel::devel)) {
@@ -446,29 +470,6 @@ protected:
         m_proxy_data->req.replace_header("Host",authority);
 
         return lib::error_code();
-    }
-
-    /// Finish constructing the transport
-    /**
-     * init_asio is called once immediately after construction to initialize
-     * Asio components to the io_service.
-     *
-     * @param io_service A pointer to the io_service to register with this
-     * connection
-     *
-     * @return Status code for the success or failure of the initialization
-     */
-    lib::error_code init_asio (io_service_ptr io_service) {
-        m_io_service = io_service;
-
-        if (config::enable_multithreading) {
-            m_strand.reset(new lib::asio::io_service::strand(*io_service));
-        }
-
-        lib::error_code ec = socket_con_type::init_asio(io_service, m_strand,
-            m_is_server);
-
-        return ec;
     }
 
     void handle_pre_init(init_handler callback, lib::error_code const & ec) {

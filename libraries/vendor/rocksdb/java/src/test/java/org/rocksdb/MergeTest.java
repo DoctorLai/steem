@@ -5,23 +5,23 @@
 
 package org.rocksdb;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.ArrayList;
-
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 public class MergeTest {
 
   @ClassRule
-  public static final RocksMemoryResource rocksMemoryResource =
-      new RocksMemoryResource();
+  public static final RocksNativeLibraryResource ROCKS_NATIVE_LIBRARY_RESOURCE =
+      new RocksNativeLibraryResource();
 
   @Rule
   public TemporaryFolder dbFolder = new TemporaryFolder();
@@ -45,14 +45,16 @@ public class MergeTest {
     }
   }
 
-  private byte[] longToByteArray(long l) {
-    ByteBuffer buf = ByteBuffer.allocate(Long.SIZE / Byte.SIZE);
+  static byte[] longToByteArray(final long l) {
+    final ByteBuffer buf =
+        ByteBuffer.allocate(Long.SIZE / Byte.SIZE).order(ByteOrder.LITTLE_ENDIAN);
     buf.putLong(l);
     return buf.array();
   }
 
-  private long longFromByteArray(byte[] a) {
-    ByteBuffer buf = ByteBuffer.allocate(Long.SIZE / Byte.SIZE);
+  static long longFromByteArray(final byte[] a) {
+    final ByteBuffer buf =
+        ByteBuffer.allocate(Long.SIZE / Byte.SIZE).order(ByteOrder.LITTLE_ENDIAN);
     buf.put(a);
     buf.flip();
     return buf.getLong();
@@ -106,9 +108,8 @@ public class MergeTest {
           db.merge(columnFamilyHandleList.get(1),
               "cfkey".getBytes(), "bb".getBytes());
 
-          byte[] value = db.get(columnFamilyHandleList.get(1),
-              "cfkey".getBytes());
-          String strValue = new String(value);
+          final byte[] value = db.get(columnFamilyHandleList.get(1), "cfkey".getBytes());
+          final String strValue = new String(value);
           assertThat(strValue).isEqualTo("aa,bb");
         } finally {
           for (final ColumnFamilyHandle handle : columnFamilyHandleList) {
@@ -144,14 +145,12 @@ public class MergeTest {
           // writing (long)100 under key
           db.put(columnFamilyHandleList.get(1),
               "cfkey".getBytes(), longToByteArray(100));
-          // merge (long)1 under key
-          db.merge(columnFamilyHandleList.get(1),
-              "cfkey".getBytes(), longToByteArray(1));
+          // merge (long)157 under key
+          db.merge(columnFamilyHandleList.get(1), "cfkey".getBytes(), longToByteArray(157));
 
-          byte[] value = db.get(columnFamilyHandleList.get(1),
-              "cfkey".getBytes());
-          long longValue = longFromByteArray(value);
-          assertThat(longValue).isEqualTo(101);
+          final byte[] value = db.get(columnFamilyHandleList.get(1), "cfkey".getBytes());
+          final long longValue = longFromByteArray(value);
+          assertThat(longValue).isEqualTo(257);
         } finally {
           for (final ColumnFamilyHandle handle : columnFamilyHandleList) {
             handle.close();
@@ -235,7 +234,7 @@ public class MergeTest {
               "cfkey".getBytes(), "bb".getBytes());
           byte[] value = db.get(columnFamilyHandleList.get(1),
               "cfkey".getBytes());
-          String strValue = new String(value);
+          final String strValue = new String(value);
 
           // Test also with createColumnFamily
           try (final ColumnFamilyOptions cfHandleOpts =
@@ -252,7 +251,7 @@ public class MergeTest {
             db.merge(cfHandle, new WriteOptions(), "cfkey2".getBytes(),
                 "yy".getBytes());
             value = db.get(cfHandle, "cfkey2".getBytes());
-            String strValueTmpCf = new String(value);
+            final String strValueTmpCf = new String(value);
 
             assertThat(strValue).isEqualTo("aa,bb");
             assertThat(strValueTmpCf).isEqualTo("xx,yy");
@@ -297,7 +296,7 @@ public class MergeTest {
               "cfkey".getBytes(), longToByteArray(1));
           byte[] value = db.get(columnFamilyHandleList.get(1),
               "cfkey".getBytes());
-          long longValue = longFromByteArray(value);
+          final long longValue = longFromByteArray(value);
 
           // Test also with createColumnFamily
           try (final ColumnFamilyOptions cfHandleOpts =
@@ -314,7 +313,7 @@ public class MergeTest {
             db.merge(cfHandle, new WriteOptions(), "cfkey2".getBytes(),
                 longToByteArray(50));
             value = db.get(cfHandle, "cfkey2".getBytes());
-            long longValueTmpCf = longFromByteArray(value);
+            final long longValueTmpCf = longFromByteArray(value);
 
             assertThat(longValue).isEqualTo(101);
             assertThat(longValueTmpCf).isEqualTo(250);
@@ -410,6 +409,32 @@ public class MergeTest {
           //no-op
         }
       }
+    }
+  }
+
+  @Test
+  public void emptyStringAsStringAppendDelimiter() throws RocksDBException {
+    try (final StringAppendOperator stringAppendOperator = new StringAppendOperator("");
+         final Options opt =
+             new Options().setCreateIfMissing(true).setMergeOperator(stringAppendOperator);
+         final RocksDB db = RocksDB.open(opt, dbFolder.getRoot().getAbsolutePath())) {
+      db.put("key".getBytes(), "aa".getBytes());
+      db.merge("key".getBytes(), "bb".getBytes());
+      final byte[] value = db.get("key".getBytes());
+      assertThat(new String(value)).isEqualTo("aabb");
+    }
+  }
+
+  @Test
+  public void multiCharStringAsStringAppendDelimiter() throws RocksDBException {
+    try (final StringAppendOperator stringAppendOperator = new StringAppendOperator("<>");
+         final Options opt =
+             new Options().setCreateIfMissing(true).setMergeOperator(stringAppendOperator);
+         final RocksDB db = RocksDB.open(opt, dbFolder.getRoot().getAbsolutePath())) {
+      db.put("key".getBytes(), "aa".getBytes());
+      db.merge("key".getBytes(), "bb".getBytes());
+      final byte[] value = db.get("key".getBytes());
+      assertThat(new String(value)).isEqualTo("aa<>bb");
     }
   }
 

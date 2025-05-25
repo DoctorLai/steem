@@ -4,14 +4,14 @@
 //  (found in the LICENSE.Apache file in the root directory).
 //
 // This file implements the "bridge" between Java and C++
-// for rocksdb::OptimisticTransactionOptions.
+// for ROCKSDB_NAMESPACE::OptimisticTransactionOptions.
 
 #include <jni.h>
 
 #include "include/org_rocksdb_OptimisticTransactionOptions.h"
-
 #include "rocksdb/comparator.h"
 #include "rocksdb/utilities/optimistic_transaction_db.h"
+#include "rocksjni/cplusplus_to_java_convert.h"
 
 /*
  * Class:     org_rocksdb_OptimisticTransactionOptions
@@ -20,9 +20,9 @@
  */
 jlong Java_org_rocksdb_OptimisticTransactionOptions_newOptimisticTransactionOptions(
     JNIEnv* /*env*/, jclass /*jcls*/) {
-  rocksdb::OptimisticTransactionOptions* opts =
-      new rocksdb::OptimisticTransactionOptions();
-  return reinterpret_cast<jlong>(opts);
+  ROCKSDB_NAMESPACE::OptimisticTransactionOptions* opts =
+      new ROCKSDB_NAMESPACE::OptimisticTransactionOptions();
+  return GET_CPLUSPLUS_POINTER(opts);
 }
 
 /*
@@ -31,9 +31,10 @@ jlong Java_org_rocksdb_OptimisticTransactionOptions_newOptimisticTransactionOpti
  * Signature: (J)Z
  */
 jboolean Java_org_rocksdb_OptimisticTransactionOptions_isSetSnapshot(
-    JNIEnv* /*env*/, jobject /*jobj*/, jlong jhandle) {
+    JNIEnv* /*env*/, jclass /*jcls*/, jlong jhandle) {
   auto* opts =
-      reinterpret_cast<rocksdb::OptimisticTransactionOptions*>(jhandle);
+      reinterpret_cast<ROCKSDB_NAMESPACE::OptimisticTransactionOptions*>(
+          jhandle);
   return opts->set_snapshot;
 }
 
@@ -43,9 +44,10 @@ jboolean Java_org_rocksdb_OptimisticTransactionOptions_isSetSnapshot(
  * Signature: (JZ)V
  */
 void Java_org_rocksdb_OptimisticTransactionOptions_setSetSnapshot(
-    JNIEnv* /*env*/, jobject /*jobj*/, jlong jhandle, jboolean jset_snapshot) {
+    JNIEnv* /*env*/, jclass /*jcls*/, jlong jhandle, jboolean jset_snapshot) {
   auto* opts =
-      reinterpret_cast<rocksdb::OptimisticTransactionOptions*>(jhandle);
+      reinterpret_cast<ROCKSDB_NAMESPACE::OptimisticTransactionOptions*>(
+          jhandle);
   opts->set_snapshot = jset_snapshot;
 }
 
@@ -55,11 +57,12 @@ void Java_org_rocksdb_OptimisticTransactionOptions_setSetSnapshot(
  * Signature: (JJ)V
  */
 void Java_org_rocksdb_OptimisticTransactionOptions_setComparator(
-    JNIEnv* /*env*/, jobject /*jobj*/, jlong jhandle,
-    jlong jcomparator_handle) {
+    JNIEnv* /*env*/, jclass /*jcls*/, jlong jhandle, jlong jcomparator_handle) {
   auto* opts =
-      reinterpret_cast<rocksdb::OptimisticTransactionOptions*>(jhandle);
-  opts->cmp = reinterpret_cast<rocksdb::Comparator*>(jcomparator_handle);
+      reinterpret_cast<ROCKSDB_NAMESPACE::OptimisticTransactionOptions*>(
+          jhandle);
+  opts->cmp =
+      reinterpret_cast<ROCKSDB_NAMESPACE::Comparator*>(jcomparator_handle);
 }
 
 /*
@@ -67,7 +70,8 @@ void Java_org_rocksdb_OptimisticTransactionOptions_setComparator(
  * Method:    disposeInternal
  * Signature: (J)V
  */
-void Java_org_rocksdb_OptimisticTransactionOptions_disposeInternal(
-    JNIEnv* /*env*/, jobject /*jobj*/, jlong jhandle) {
-  delete reinterpret_cast<rocksdb::OptimisticTransactionOptions*>(jhandle);
+void Java_org_rocksdb_OptimisticTransactionOptions_disposeInternalJni(
+    JNIEnv* /*env*/, jclass /*jcls*/, jlong jhandle) {
+  delete reinterpret_cast<ROCKSDB_NAMESPACE::OptimisticTransactionOptions*>(
+      jhandle);
 }

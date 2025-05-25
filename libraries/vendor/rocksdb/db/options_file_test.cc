@@ -3,16 +3,15 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 
-#ifndef ROCKSDB_LITE
 #include <string>
 
-#include "db/db_impl.h"
+#include "db/db_impl/db_impl.h"
 #include "db/db_test_util.h"
 #include "rocksdb/options.h"
 #include "rocksdb/table.h"
-#include "util/testharness.h"
+#include "test_util/testharness.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 class OptionsFileTest : public testing::Test {
  public:
   OptionsFileTest() : dbname_(test::PerThreadDBPath("options_file_test")) {}
@@ -25,11 +24,11 @@ void UpdateOptionsFiles(DB* db,
                         std::unordered_set<std::string>* filename_history,
                         int* options_files_count) {
   std::vector<std::string> filenames;
-  db->GetEnv()->GetChildren(db->GetName(), &filenames);
+  EXPECT_OK(db->GetEnv()->GetChildren(db->GetName(), &filenames));
   uint64_t number;
   FileType type;
   *options_files_count = 0;
-  for (auto filename : filenames) {
+  for (const auto& filename : filenames) {
     if (ParseFileName(filename, &number, &type) && type == kOptionsFile) {
       filename_history->insert(filename);
       (*options_files_count)++;
@@ -42,30 +41,30 @@ void VerifyOptionsFileName(
     DB* db, const std::unordered_set<std::string>& past_filenames) {
   std::vector<std::string> filenames;
   std::unordered_set<std::string> current_filenames;
-  db->GetEnv()->GetChildren(db->GetName(), &filenames);
+  EXPECT_OK(db->GetEnv()->GetChildren(db->GetName(), &filenames));
   uint64_t number;
   FileType type;
-  for (auto filename : filenames) {
+  for (const auto& filename : filenames) {
     if (ParseFileName(filename, &number, &type) && type == kOptionsFile) {
       current_filenames.insert(filename);
     }
   }
-  for (auto past_filename : past_filenames) {
+  for (const auto& past_filename : past_filenames) {
     if (current_filenames.find(past_filename) != current_filenames.end()) {
       continue;
     }
-    for (auto filename : current_filenames) {
+    for (const auto& filename : current_filenames) {
       ASSERT_GT(filename, past_filename);
     }
   }
 }
-}  // namespace
+}  // anonymous namespace
 
 TEST_F(OptionsFileTest, NumberOfOptionsFiles) {
   const int kReopenCount = 20;
   Options opt;
   opt.create_if_missing = true;
-  DestroyDB(dbname_, opt);
+  ASSERT_OK(DestroyDB(dbname_, opt));
   std::unordered_set<std::string> filename_history;
   DB* db;
   for (int i = 0; i < kReopenCount; ++i) {
@@ -98,22 +97,14 @@ TEST_F(OptionsFileTest, OptionsFileName) {
   ASSERT_EQ(type, kTempFile);
   ASSERT_EQ(number, kTempOptionsFileNum);
 }
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
 #if !(defined NDEBUG) || !defined(OS_WIN)
+  ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 #else
   return 0;
 #endif  // !(defined NDEBUG) || !defined(OS_WIN)
 }
-#else
-
-#include <cstdio>
-
-int main(int /*argc*/, char** /*argv*/) {
-  printf("Skipped as Options file is not supported in RocksDBLite.\n");
-  return 0;
-}
-#endif  // !ROCKSDB_LITE

@@ -5,9 +5,8 @@
 //
 #pragma once
 
-#ifndef ROCKSDB_LITE
-
 #include <assert.h>
+
 #include <list>
 #include <vector>
 
@@ -15,10 +14,10 @@
 #include <sys/mman.h>
 #endif
 
-#include "include/rocksdb/env.h"
+#include "rocksdb/env.h"
 #include "util/mutexlock.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 // HashTable<T, Hash, Equal>
 //
@@ -233,6 +232,4 @@ class HashTable {
   std::unique_ptr<port::RWMutex[]> locks_;  // Granular locks
 };
 
-}  // namespace rocksdb
-
-#endif
+}  // namespace ROCKSDB_NAMESPACE

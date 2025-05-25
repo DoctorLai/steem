@@ -5,9 +5,20 @@
 
 package org.rocksdb;
 
-public interface ColumnFamilyOptionsInterface
-    <T extends ColumnFamilyOptionsInterface>
-        extends AdvancedColumnFamilyOptionsInterface<T> {
+import java.util.Collection;
+import java.util.List;
+
+public interface ColumnFamilyOptionsInterface<T extends ColumnFamilyOptionsInterface<T>>
+    extends AdvancedColumnFamilyOptionsInterface<T> {
+  /**
+   * The function recovers options to a previous version. Only 4.6 or later
+   * versions are supported.
+   *
+   * @param majorVersion The major version to recover default values of options
+   * @param minorVersion The minor version to recover default values of options
+   * @return the instance of the current object.
+   */
+  T oldDefaults(int majorVersion, int minorVersion);
 
   /**
    * Use this if your DB is very small (like under 1GB) and you don't want to
@@ -16,6 +27,16 @@ public interface ColumnFamilyOptionsInterface
    * @return the instance of the current object.
    */
   T optimizeForSmallDb();
+
+  /**
+   * Some functions that make it easier to optimize RocksDB
+   * Use this if your DB is very small (like under 1GB) and you don't want to
+   * spend lots of memory for memtables.
+   *
+   * @param cache An optional cache object is passed in to be used as the block cache
+   * @return the instance of the current object.
+   */
+  T optimizeForSmallDb(Cache cache);
 
   /**
    * Use this if you don't need to keep the data sorted, i.e. you'll never use
@@ -100,9 +121,9 @@ public interface ColumnFamilyOptionsInterface
 
   /**
    * Set {@link BuiltinComparator} to be used with RocksDB.
-   *
+   * <p>
    * Note: Comparator can be set once upon database creation.
-   *
+   * <p>
    * Default: BytewiseComparator.
    * @param builtinComparator a {@link BuiltinComparator} type.
    * @return the instance of the current object.
@@ -112,18 +133,18 @@ public interface ColumnFamilyOptionsInterface
 
   /**
    * Use the specified comparator for key ordering.
-   *
+   * <p>
    * Comparator should not be disposed before options instances using this comparator is
    * disposed. If dispose() function is not called, then comparator object will be
    * GC'd automatically.
-   *
+   * <p>
    * Comparator instance can be re-used in multiple options instances.
    *
    * @param comparator java instance.
    * @return the instance of the current object.
    */
   T setComparator(
-      AbstractComparator<? extends AbstractSlice<?>> comparator);
+      AbstractComparator comparator);
 
   /**
    * <p>Set the merge operator to be used for merging two merge operands
@@ -155,17 +176,17 @@ public interface ColumnFamilyOptionsInterface
    * A single CompactionFilter instance to call into during compaction.
    * Allows an application to modify/delete a key-value during background
    * compaction.
-   *
+   * <p>
    * If the client requires a new compaction filter to be used for different
    * compaction runs, it can specify call
    * {@link #setCompactionFilterFactory(AbstractCompactionFilterFactory)}
    * instead.
-   *
+   * <p>
    * The client should specify only set one of the two.
-   * {@link #setCompactionFilter(AbstractCompactionFilter)} takes precedence
+   * {#setCompactionFilter(AbstractCompactionFilter)} takes precedence
    * over {@link #setCompactionFilterFactory(AbstractCompactionFilterFactory)}
    * if the client specifies both.
-   *
+   * <p>
    * If multithreaded compaction is being used, the supplied CompactionFilter
    * instance may be used from different threads concurrently and so should be thread-safe.
    *
@@ -186,7 +207,7 @@ public interface ColumnFamilyOptionsInterface
    * This is a factory that provides {@link AbstractCompactionFilter} objects
    * which allow an application to modify/delete a key-value during background
    * compaction.
-   *
+   * <p>
    * A new filter will be created on each compaction run.  If multithreaded
    * compaction is being used, each created CompactionFilter will only be used
    * from a single thread and so does not need to be thread-safe.
@@ -207,7 +228,7 @@ public interface ColumnFamilyOptionsInterface
 
   /**
    * This prefix-extractor uses the first n bytes of a key as its prefix.
-   *
+   * <p>
    * In some hash-based memtable representation such as HashLinkedList
    * and HashSkipList, prefixes are used to partition the keys into
    * several buckets.  Prefix extractor is used to specify how to
@@ -374,10 +395,34 @@ public interface ColumnFamilyOptionsInterface
   String tableFactoryName();
 
   /**
+   * A list of paths where SST files for this column family
+   * can be put into, with its target size. Similar to db_paths,
+   * newer data is placed into paths specified earlier in the
+   * vector while older data gradually moves to paths specified
+   * later in the vector.
+   * Note that, if a path is supplied to multiple column
+   * families, it would have files and total size from all
+   * the column families combined. User should provision for the
+   * total size(from all the column families) in such cases.
+   * <p>
+   * If left empty, db_paths will be used.
+   * Default: empty
+   *
+   * @param paths collection of paths for SST files.
+   * @return the reference of the current options.
+   */
+  T setCfPaths(final Collection<DbPath> paths);
+
+  /**
+   * @return collection of paths for SST files.
+   */
+  List<DbPath> cfPaths();
+
+  /**
    * Compression algorithm that will be used for the bottommost level that
    * contain files. If level-compaction is used, this option will only affect
    * levels after base level.
-   *
+   * <p>
    * Default: {@link CompressionType#DISABLE_COMPRESSION_OPTION}
    *
    * @param bottommostCompressionType  The compression type to use for the
@@ -392,7 +437,7 @@ public interface ColumnFamilyOptionsInterface
    * Compression algorithm that will be used for the bottommost level that
    * contain files. If level-compaction is used, this option will only affect
    * levels after base level.
-   *
+   * <p>
    * Default: {@link CompressionType#DISABLE_COMPRESSION_OPTION}
    *
    * @return The compression type used for the bottommost level
@@ -402,7 +447,7 @@ public interface ColumnFamilyOptionsInterface
   /**
    * Set the options for compression algorithms used by
    * {@link #bottommostCompressionType()} if it is enabled.
-   *
+   * <p>
    * To enable it, please see the definition of
    * {@link CompressionOptions}.
    *
@@ -415,7 +460,7 @@ public interface ColumnFamilyOptionsInterface
 
   /**
    * Get the bottom most compression options.
-   *
+   * <p>
    * See {@link #setBottommostCompressionOptions(CompressionOptions)}.
    *
    * @return the bottom most compression options.
@@ -438,6 +483,63 @@ public interface ColumnFamilyOptionsInterface
    * @return The compression options
    */
   CompressionOptions compressionOptions();
+
+  /**
+   * If non-nullptr, use the specified factory for a function to determine the
+   * partitioning of sst files. This helps compaction to split the files
+   * on interesting boundaries (key prefixes) to make propagation of sst
+   * files less write amplifying (covering the whole key space).
+   * <p>
+   * Default: nullptr
+   *
+   * @param factory The factory reference
+   * @return the reference of the current options.
+   */
+  @Experimental("Caution: this option is experimental")
+  T setSstPartitionerFactory(SstPartitionerFactory factory);
+
+  /**
+   * Get SST partitioner factory
+   *
+   * @return SST partitioner factory
+   */
+  @Experimental("Caution: this option is experimental")
+  SstPartitionerFactory sstPartitionerFactory();
+
+  /**
+   * Sets the maximum range delete calls, after which memtable is flushed.
+   * This applies to the mutable memtable.
+   *
+   * @param count a positive integer, 0 (default) to disable the feature.
+   * @return the reference of the current options.
+   */
+  T setMemtableMaxRangeDeletions(final int count);
+
+  /**
+   * Gets the current setting of maximum range deletes allowed
+   * 0(default) indicates that feature is disabled.
+   *
+   * @return current value of memtable_max_range_deletions
+   */
+  int memtableMaxRangeDeletions();
+
+  /**
+   * Compaction concurrent thread limiter for the column family.
+   * If non-nullptr, use given concurrent thread limiter to control
+   * the max outstanding compaction tasks. Limiter can be shared with
+   * multiple column families across db instances.
+   *
+   * @param concurrentTaskLimiter The compaction thread limiter.
+   * @return the reference of the current options.
+   */
+  T setCompactionThreadLimiter(ConcurrentTaskLimiter concurrentTaskLimiter);
+
+  /**
+   * Get compaction thread limiter
+   *
+   * @return Compaction thread limiter
+   */
+  ConcurrentTaskLimiter compactionThreadLimiter();
 
   /**
    * Default memtable memory budget used with the following methods:

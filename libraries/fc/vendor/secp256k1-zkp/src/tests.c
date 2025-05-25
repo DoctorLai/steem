@@ -2046,7 +2046,7 @@ void test_ecdsa_edge_cases(void) {
         CHECK(secp256k1_ecdsa_verify(ctx, msg32, sigbder, 6, pubkeyb, pubkeyblen) == -2);
         CHECK(secp256k1_ecdsa_verify(ctx, msg32, sigbder, sizeof(sigbder)-1, pubkeyb, pubkeyblen) == -2);
         for(i = 0; i < 8; i++) {
-            int c;
+            int c, expected;
             unsigned char orig = sigbder[i];
             /*Try every single-byte change.*/
             for (c = 0; c < 256; c++) {
@@ -2054,8 +2054,8 @@ void test_ecdsa_edge_cases(void) {
                     continue;
                 }
                 sigbder[i] = c;
-                CHECK(secp256k1_ecdsa_verify(ctx, msg32, sigbder, sizeof(sigbder), pubkeyb, pubkeyblen) ==
-                  (i==4 || i==7) ? 0 : -2 );
+                expected = (i == 4 || i == 7) ? 0 : -2;
+                CHECK(secp256k1_ecdsa_verify(ctx, msg32, sigbder, sizeof(sigbder), pubkeyb, pubkeyblen) == expected);
             }
             sigbder[i] = orig;
         }

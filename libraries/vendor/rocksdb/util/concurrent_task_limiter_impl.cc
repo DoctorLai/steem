@@ -8,25 +8,22 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "util/concurrent_task_limiter_impl.h"
+
 #include "rocksdb/concurrent_task_limiter.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 ConcurrentTaskLimiterImpl::ConcurrentTaskLimiterImpl(
     const std::string& name, int32_t max_outstanding_task)
     : name_(name),
       max_outstanding_tasks_{max_outstanding_task},
-      outstanding_tasks_{0} {
-
-}
+      outstanding_tasks_{0} {}
 
 ConcurrentTaskLimiterImpl::~ConcurrentTaskLimiterImpl() {
   assert(outstanding_tasks_ == 0);
 }
 
-const std::string& ConcurrentTaskLimiterImpl::GetName() const {
-  return name_;
-}
+const std::string& ConcurrentTaskLimiterImpl::GetName() const { return name_; }
 
 void ConcurrentTaskLimiterImpl::SetMaxOutstandingTask(int32_t limit) {
   max_outstanding_tasks_.store(limit, std::memory_order_relaxed);
@@ -54,8 +51,8 @@ std::unique_ptr<TaskLimiterToken> ConcurrentTaskLimiterImpl::GetToken(
   return nullptr;
 }
 
-ConcurrentTaskLimiter* NewConcurrentTaskLimiter(
-    const std::string& name, int32_t limit) {
+ConcurrentTaskLimiter* NewConcurrentTaskLimiter(const std::string& name,
+                                                int32_t limit) {
   return new ConcurrentTaskLimiterImpl(name, limit);
 }
 
@@ -64,4 +61,4 @@ TaskLimiterToken::~TaskLimiterToken() {
   assert(limiter_->outstanding_tasks_ >= 0);
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

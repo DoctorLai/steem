@@ -5,8 +5,6 @@
 
 #pragma once
 
-#ifndef ROCKSDB_LITE
-
 #include <atomic>
 #include <condition_variable>
 #include <limits>
@@ -19,9 +17,12 @@
 #include <utility>
 #include <vector>
 
+#include "db/blob/blob_log_format.h"
+#include "db/blob/blob_log_writer.h"
 #include "db/db_iter.h"
 #include "rocksdb/compaction_filter.h"
 #include "rocksdb/db.h"
+#include "rocksdb/file_system.h"
 #include "rocksdb/listener.h"
 #include "rocksdb/options.h"
 #include "rocksdb/statistics.h"
@@ -30,20 +31,20 @@
 #include "util/timer_queue.h"
 #include "utilities/blob_db/blob_db.h"
 #include "utilities/blob_db/blob_file.h"
-#include "utilities/blob_db/blob_log_format.h"
-#include "utilities/blob_db/blob_log_reader.h"
-#include "utilities/blob_db/blob_log_writer.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class DBImpl;
 class ColumnFamilyHandle;
 class ColumnFamilyData;
+class SystemClock;
+
 struct FlushJobInfo;
 
 namespace blob_db {
 
 struct BlobCompactionContext;
+struct BlobCompactionContextGC;
 class BlobDBImpl;
 class BlobFile;
 
@@ -59,34 +60,23 @@ struct BlobFileComparator {
                   const std::shared_ptr<BlobFile>& rhs) const;
 };
 
-struct GCStats {
-  uint64_t blob_count = 0;
-  uint64_t num_keys_overwritten = 0;
-  uint64_t num_keys_expired = 0;
-  uint64_t num_keys_relocated = 0;
-  uint64_t bytes_overwritten = 0;
-  uint64_t bytes_expired = 0;
-  uint64_t bytes_relocated = 0;
-};
-
 /**
- * The implementation class for BlobDB. This manages the value
- * part in TTL aware sequentially written files. These files are
- * Garbage Collected.
+ * The implementation class for BlobDB. It manages the blob logs, which
+ * are sequentially written files. Blob logs can be of the TTL or non-TTL
+ * varieties; the former are cleaned up when they expire, while the latter
+ * are (optionally) garbage collected.
  */
 class BlobDBImpl : public BlobDB {
   friend class BlobFile;
   friend class BlobDBIterator;
+  friend class BlobDBListener;
+  friend class BlobDBListenerGC;
+  friend class BlobIndexCompactionFilterBase;
+  friend class BlobIndexCompactionFilterGC;
 
  public:
   // deletions check period
   static constexpr uint32_t kDeleteCheckPeriodMillisecs = 2 * 1000;
-
-  // gc percentage each check period
-  static constexpr uint32_t kGCFilePercentage = 100;
-
-  // gc period
-  static constexpr uint32_t kGCCheckPeriodMillisecs = 60 * 1000;
 
   // sanity check task
   static constexpr uint32_t kSanityCheckPeriodMillisecs = 20 * 60 * 1000;
@@ -112,18 +102,19 @@ class BlobDBImpl : public BlobDB {
              const Slice& value) override;
 
   using BlobDB::Get;
-  Status Get(const ReadOptions& read_options, ColumnFamilyHandle* column_family,
-             const Slice& key, PinnableSlice* value) override;
+  Status Get(const ReadOptions& _read_options,
+             ColumnFamilyHandle* column_family, const Slice& key,
+             PinnableSlice* value, std::string* timestamp) override;
 
-  Status Get(const ReadOptions& read_options, ColumnFamilyHandle* column_family,
-             const Slice& key, PinnableSlice* value,
-             uint64_t* expiration) override;
+  Status Get(const ReadOptions& _read_options,
+             ColumnFamilyHandle* column_family, const Slice& key,
+             PinnableSlice* value, uint64_t* expiration) override;
 
   using BlobDB::NewIterator;
-  virtual Iterator* NewIterator(const ReadOptions& read_options) override;
+  Iterator* NewIterator(const ReadOptions& read_options) override;
 
   using BlobDB::NewIterators;
-  virtual Status NewIterators(
+  Status NewIterators(
       const ReadOptions& /*read_options*/,
       const std::vector<ColumnFamilyHandle*>& /*column_families*/,
       std::vector<Iterator*>* /*iterators*/) override {
@@ -131,14 +122,15 @@ class BlobDBImpl : public BlobDB {
   }
 
   using BlobDB::MultiGet;
-  virtual std::vector<Status> MultiGet(
-      const ReadOptions& read_options,
-      const std::vector<Slice>& keys,
-      std::vector<std::string>* values) override;
+  void MultiGet(const ReadOptions& _read_options, size_t num_keys,
+                ColumnFamilyHandle** column_families, const Slice* keys,
+                PinnableSlice* values, std::string* timestamps,
+                Status* statuses, const bool sorted_input) override;
 
-  virtual Status Write(const WriteOptions& opts, WriteBatch* updates) override;
+  using BlobDB::Write;
+  Status Write(const WriteOptions& opts, WriteBatch* updates) override;
 
-  virtual Status Close() override;
+  Status Close() override;
 
   using BlobDB::PutWithTTL;
   Status PutWithTTL(const WriteOptions& options, const Slice& key,
@@ -148,36 +140,55 @@ class BlobDBImpl : public BlobDB {
   Status PutUntil(const WriteOptions& options, const Slice& key,
                   const Slice& value, uint64_t expiration) override;
 
+  using BlobDB::CompactFiles;
+  Status CompactFiles(
+      const CompactionOptions& compact_options,
+      const std::vector<std::string>& input_file_names, const int output_level,
+      const int output_path_id = -1,
+      std::vector<std::string>* const output_file_names = nullptr,
+      CompactionJobInfo* compaction_job_info = nullptr) override;
+
   BlobDBOptions GetBlobDBOptions() const override;
 
   BlobDBImpl(const std::string& dbname, const BlobDBOptions& bdb_options,
              const DBOptions& db_options,
              const ColumnFamilyOptions& cf_options);
 
-  virtual Status DisableFileDeletions() override;
+  Status DisableFileDeletions() override;
 
-  virtual Status EnableFileDeletions(bool force) override;
+  Status EnableFileDeletions() override;
 
-  virtual Status GetLiveFiles(std::vector<std::string>&,
-                              uint64_t* manifest_file_size,
-                              bool flush_memtable = true) override;
-  virtual void GetLiveFilesMetaData(std::vector<LiveFileMetaData>*) override;
+  Status GetLiveFiles(std::vector<std::string>&, uint64_t* manifest_file_size,
+                      bool flush_memtable = true) override;
+  void GetLiveFilesMetaData(std::vector<LiveFileMetaData>*) override;
+  Status GetLiveFilesStorageInfo(
+      const LiveFilesStorageInfoOptions& opts,
+      std::vector<LiveFileStorageInfo>* files) override;
 
   ~BlobDBImpl();
 
   Status Open(std::vector<ColumnFamilyHandle*>* handles);
 
-  Status SyncBlobFiles() override;
+  Status SyncBlobFiles(const WriteOptions& write_options) override;
 
-  void UpdateLiveSSTSize();
+  // Common part of the two GetCompactionContext methods below.
+  // REQUIRES: read lock on mutex_
+  void GetCompactionContextCommon(BlobCompactionContext* context);
 
   void GetCompactionContext(BlobCompactionContext* context);
+  void GetCompactionContext(BlobCompactionContext* context,
+                            BlobCompactionContextGC* context_gc);
 
 #ifndef NDEBUG
   Status TEST_GetBlobValue(const Slice& key, const Slice& index_entry,
                            PinnableSlice* value);
 
+  void TEST_AddDummyBlobFile(uint64_t blob_file_number,
+                             SequenceNumber immutable_sequence);
+
   std::vector<std::shared_ptr<BlobFile>> TEST_GetBlobFiles() const;
+
+  std::vector<std::shared_ptr<BlobFile>> TEST_GetLiveImmNonTTLFiles() const;
 
   std::vector<std::shared_ptr<BlobFile>> TEST_GetObsoleteFiles() const;
 
@@ -187,11 +198,6 @@ class BlobDBImpl : public BlobDB {
                              SequenceNumber obsolete_seq = 0,
                              bool update_size = true);
 
-  Status TEST_GCFileAndUpdateLSM(std::shared_ptr<BlobFile>& bfile,
-                                 GCStats* gc_stats);
-
-  void TEST_RunGC();
-
   void TEST_EvictExpiredFiles();
 
   void TEST_DeleteObsoleteFiles();
@@ -199,10 +205,17 @@ class BlobDBImpl : public BlobDB {
   uint64_t TEST_live_sst_size();
 
   const std::string& TEST_blob_dir() const { return blob_dir_; }
+
+  void TEST_InitializeBlobFileToSstMapping(
+      const std::vector<LiveFileMetaData>& live_files);
+
+  void TEST_ProcessFlushJobInfo(const FlushJobInfo& info);
+
+  void TEST_ProcessCompactionJobInfo(const CompactionJobInfo& info);
+
 #endif  //  !NDEBUG
 
  private:
-  class GarbageCollectionWriteCallback;
   class BlobInserter;
 
   // Create a snapshot if there isn't one in read options.
@@ -216,14 +229,31 @@ class BlobDBImpl : public BlobDB {
   Status GetBlobValue(const Slice& key, const Slice& index_entry,
                       PinnableSlice* value, uint64_t* expiration = nullptr);
 
+  Status GetRawBlobFromFile(const Slice& key, uint64_t file_number,
+                            uint64_t offset, uint64_t size,
+                            PinnableSlice* value,
+                            CompressionType* compression_type);
+
   Slice GetCompressedSlice(const Slice& raw,
                            std::string* compression_output) const;
 
+  Status DecompressSlice(const Slice& compressed_value,
+                         CompressionType compression_type,
+                         PinnableSlice* value_output) const;
+
   // Close a file by appending a footer, and removes file from open files list.
-  Status CloseBlobFile(std::shared_ptr<BlobFile> bfile, bool need_lock = true);
+  // REQUIRES: lock held on write_mutex_, write lock held on both the db mutex_
+  // and the blob file's mutex_. If called on a blob file which is visible only
+  // to a single thread (like in the case of new files written during
+  // compaction/GC), the locks on write_mutex_ and the blob file's mutex_ can be
+  // avoided.
+  Status CloseBlobFile(const WriteOptions& write_options,
+                       std::shared_ptr<BlobFile> bfile);
 
   // Close a file if its size exceeds blob_file_size
-  Status CloseBlobFileIfNeeded(std::shared_ptr<BlobFile>& bfile);
+  // REQUIRES: lock held on write_mutex_.
+  Status CloseBlobFileIfNeeded(const WriteOptions& write_options,
+                               std::shared_ptr<BlobFile>& bfile);
 
   // Mark file as obsolete and move the file to obsolete file list.
   //
@@ -235,31 +265,39 @@ class BlobDBImpl : public BlobDB {
                       const Slice& value, uint64_t expiration,
                       WriteBatch* batch);
 
-  Status AppendBlob(const std::shared_ptr<BlobFile>& bfile,
+  Status AppendBlob(const WriteOptions& write_options,
+                    const std::shared_ptr<BlobFile>& bfile,
                     const std::string& headerbuf, const Slice& key,
                     const Slice& value, uint64_t expiration,
                     std::string* index_entry);
 
-  // find an existing blob log file based on the expiration unix epoch
-  // if such a file does not exist, return nullptr
-  Status SelectBlobFileTTL(uint64_t expiration,
-                           std::shared_ptr<BlobFile>* blob_file);
+  // Create a new blob file and associated writer.
+  Status CreateBlobFileAndWriter(const WriteOptions& write_options,
+                                 bool has_ttl,
+                                 const ExpirationRange& expiration_range,
+                                 const std::string& reason,
+                                 std::shared_ptr<BlobFile>* blob_file,
+                                 std::shared_ptr<BlobLogWriter>* writer);
 
-  // find an existing blob log file to append the value to
-  Status SelectBlobFile(std::shared_ptr<BlobFile>* blob_file);
+  // Get the open non-TTL blob log file, or create a new one if no such file
+  // exists.
+  Status SelectBlobFile(const WriteOptions& write_options,
+                        std::shared_ptr<BlobFile>* blob_file);
+
+  // Get the open TTL blob log file for a certain expiration, or create a new
+  // one if no such file exists.
+  Status SelectBlobFileTTL(const WriteOptions& write_options,
+                           uint64_t expiration,
+                           std::shared_ptr<BlobFile>* blob_file);
 
   std::shared_ptr<BlobFile> FindBlobFileLocked(uint64_t expiration) const;
 
   // periodic sanity check. Bunch of checks
   std::pair<bool, int64_t> SanityCheck(bool aborted);
 
-  // delete files which have been garbage collected and marked
-  // obsolete. Check whether any snapshots exist which refer to
-  // the same
+  // Delete files that have been marked obsolete (either because of TTL
+  // or GC). Check whether any snapshots exist which refer to the same.
   std::pair<bool, int64_t> DeleteObsoleteFiles(bool aborted);
-
-  // Major task to garbage collect expired and deleted blobs
-  std::pair<bool, int64_t> RunGC(bool aborted);
 
   // periodically check if open blob files and their TTL's has expired
   // if expired, close the sequential writer and make the file immutable
@@ -276,13 +314,64 @@ class BlobDBImpl : public BlobDB {
   void StartBackgroundTasks();
 
   // add a new Blob File
-  std::shared_ptr<BlobFile> NewBlobFile(const std::string& reason);
+  std::shared_ptr<BlobFile> NewBlobFile(bool has_ttl,
+                                        const ExpirationRange& expiration_range,
+                                        const std::string& reason);
+
+  // Register a new blob file.
+  // REQUIRES: write lock on mutex_.
+  void RegisterBlobFile(std::shared_ptr<BlobFile> blob_file);
 
   // collect all the blob log files from the blob directory
   Status GetAllBlobFiles(std::set<uint64_t>* file_numbers);
 
   // Open all blob files found in blob_dir.
   Status OpenAllBlobFiles();
+
+  // Link an SST to a blob file. Comes in locking and non-locking varieties
+  // (the latter is used during Open).
+  template <typename Linker>
+  void LinkSstToBlobFileImpl(uint64_t sst_file_number,
+                             uint64_t blob_file_number, Linker linker);
+
+  void LinkSstToBlobFile(uint64_t sst_file_number, uint64_t blob_file_number);
+
+  void LinkSstToBlobFileNoLock(uint64_t sst_file_number,
+                               uint64_t blob_file_number);
+
+  // Unlink an SST from a blob file.
+  void UnlinkSstFromBlobFile(uint64_t sst_file_number,
+                             uint64_t blob_file_number);
+
+  // Initialize the mapping between blob files and SSTs during Open.
+  void InitializeBlobFileToSstMapping(
+      const std::vector<LiveFileMetaData>& live_files);
+
+  // Update the mapping between blob files and SSTs after a flush and mark
+  // any unneeded blob files obsolete.
+  void ProcessFlushJobInfo(const FlushJobInfo& info);
+
+  // Update the mapping between blob files and SSTs after a compaction and
+  // mark any unneeded blob files obsolete.
+  void ProcessCompactionJobInfo(const CompactionJobInfo& info);
+
+  // Mark an immutable non-TTL blob file obsolete assuming it has no more SSTs
+  // linked to it, and all memtables from before the blob file became immutable
+  // have been flushed. Note: should only be called if the condition holds for
+  // all lower-numbered non-TTL blob files as well.
+  bool MarkBlobFileObsoleteIfNeeded(const std::shared_ptr<BlobFile>& blob_file,
+                                    SequenceNumber obsolete_seq);
+
+  // Mark all immutable non-TTL blob files that aren't needed by any SSTs as
+  // obsolete. Comes in two varieties; the version used during Open need not
+  // worry about locking or snapshots.
+  template <class Functor>
+  void MarkUnreferencedBlobFilesObsoleteImpl(Functor mark_if_needed);
+
+  void MarkUnreferencedBlobFilesObsolete();
+  void MarkUnreferencedBlobFilesObsoleteDuringOpen();
+
+  void UpdateLiveSSTSize(const WriteOptions& write_options);
 
   Status GetBlobFileReader(const std::shared_ptr<BlobFile>& blob_file,
                            std::shared_ptr<RandomAccessFileReader>* reader);
@@ -295,16 +384,10 @@ class BlobDBImpl : public BlobDB {
   // creates a sequential (append) writer for this blobfile
   Status CreateWriterLocked(const std::shared_ptr<BlobFile>& bfile);
 
-  // returns a Writer object for the file. If writer is not
+  // returns a BlobLogWriter object for the file. If writer is not
   // already present, creates one. Needs Write Mutex to be held
   Status CheckOrCreateWriterLocked(const std::shared_ptr<BlobFile>& blob_file,
-                                   std::shared_ptr<Writer>* writer);
-
-  // Iterate through keys and values on Blob and write into
-  // separate file the remaining blobs and delete/update pointers
-  // in LSM atomically
-  Status GCFileAndUpdateLSM(const std::shared_ptr<BlobFile>& bfptr,
-                            GCStats* gcstats);
+                                   std::shared_ptr<BlobLogWriter>* writer);
 
   // checks if there is no snapshot which is referencing the
   // blobs
@@ -313,14 +396,17 @@ class BlobDBImpl : public BlobDB {
 
   void CopyBlobFiles(std::vector<std::shared_ptr<BlobFile>>* bfiles_copy);
 
-  uint64_t EpochNow() { return env_->NowMicros() / 1000000; }
+  uint64_t EpochNow() { return clock_->NowMicros() / 1000000; }
 
   // Check if inserting a new blob will make DB grow out of space.
   // If is_fifo = true, FIFO eviction will be triggered to make room for the
   // new blob. If force_evict = true, FIFO eviction will evict blob files
   // even eviction will not make enough room for the new blob.
-  Status CheckSizeAndEvictBlobFiles(uint64_t blob_size,
+  Status CheckSizeAndEvictBlobFiles(const WriteOptions& write_options,
+                                    uint64_t blob_size,
                                     bool force_evict = false);
+
+  Status CloseImpl();
 
   // name of the database directory
   std::string dbname_;
@@ -328,12 +414,12 @@ class BlobDBImpl : public BlobDB {
   // the base DB
   DBImpl* db_impl_;
   Env* env_;
-
+  SystemClock* clock_;
   // the options that govern the behavior of Blob Storage
   BlobDBOptions bdb_options_;
   DBOptions db_options_;
   ColumnFamilyOptions cf_options_;
-  EnvOptions env_options_;
+  FileOptions file_options_;
 
   // Raw pointer of statistic. db_options_ has a std::shared_ptr to hold
   // ownership.
@@ -344,7 +430,7 @@ class BlobDBImpl : public BlobDB {
   std::string blob_dir_;
 
   // pointer to directory
-  std::unique_ptr<Directory> dir_ent_;
+  std::unique_ptr<FSDirectory> dir_ent_;
 
   // Read Write Mutex, which protects all the data structures
   // HEAVILY TRAFFICKED
@@ -359,8 +445,11 @@ class BlobDBImpl : public BlobDB {
   // entire metadata of all the BLOB files memory
   std::map<uint64_t, std::shared_ptr<BlobFile>> blob_files_;
 
-  // epoch or version of the open files.
-  std::atomic<uint64_t> epoch_of_;
+  // All live immutable non-TTL blob files.
+  std::map<uint64_t, std::shared_ptr<BlobFile>> live_imm_non_ttl_blob_files_;
+
+  // The largest sequence number that has been flushed.
+  SequenceNumber flush_sequence_;
 
   // opened non-TTL blob file.
   std::shared_ptr<BlobFile> open_non_ttl_file_;
@@ -412,7 +501,7 @@ class BlobDBImpl : public BlobDB {
 
   // Each call of DisableFileDeletions will increase disable_file_deletion_
   // by 1. EnableFileDeletions will either decrease the count by 1 or reset
-  // it to zeor, depending on the force flag.
+  // it to zero, depending on the force flag.
   //
   // REQUIRES: access with delete_file_mutex_ held.
   int disable_file_deletions_ = 0;
@@ -420,6 +509,7 @@ class BlobDBImpl : public BlobDB {
   uint32_t debug_level_;
 };
 
+Decompressor& BlobDecompressor();
+
 }  // namespace blob_db
-}  // namespace rocksdb
-#endif  // ROCKSDB_LITE
+}  // namespace ROCKSDB_NAMESPACE

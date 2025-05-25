@@ -5,8 +5,6 @@
 
 #pragma once
 
-#ifndef ROCKSDB_LITE
-
 #include <algorithm>
 #include <atomic>
 #include <mutex>
@@ -28,7 +26,7 @@
 #include "utilities/transactions/transaction_base.h"
 #include "utilities/transactions/transaction_util.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class PessimisticTransactionDB;
 
@@ -40,8 +38,11 @@ class PessimisticTransaction : public TransactionBaseImpl {
   PessimisticTransaction(TransactionDB* db, const WriteOptions& write_options,
                          const TransactionOptions& txn_options,
                          const bool init = true);
+  // No copying allowed
+  PessimisticTransaction(const PessimisticTransaction&) = delete;
+  void operator=(const PessimisticTransaction&) = delete;
 
-  virtual ~PessimisticTransaction();
+  ~PessimisticTransaction() override;
 
   void Reinitialize(TransactionDB* txn_db, const WriteOptions& write_options,
                     const TransactionOptions& txn_options);
@@ -113,11 +114,14 @@ class PessimisticTransaction : public TransactionBaseImpl {
 
   int64_t GetDeadlockDetectDepth() const { return deadlock_detect_depth_; }
 
- protected:
-  // Refer to
-  // TransactionOptions::use_only_the_last_commit_time_batch_for_recovery
-  bool use_only_the_last_commit_time_batch_for_recovery_ = false;
+  Status GetRangeLock(ColumnFamilyHandle* column_family,
+                      const Endpoint& start_key,
+                      const Endpoint& end_key) override;
 
+  Status CollapseKey(const ReadOptions& options, const Slice& key,
+                     ColumnFamilyHandle* column_family = nullptr) override;
+
+ protected:
   virtual Status PrepareInternal() = 0;
 
   virtual Status CommitWithoutPrepareInternal() = 0;
@@ -133,7 +137,7 @@ class PessimisticTransaction : public TransactionBaseImpl {
 
   virtual void Initialize(const TransactionOptions& txn_options);
 
-  Status LockBatch(WriteBatch* batch, TransactionKeyMap* keys_to_unlock);
+  Status LockBatch(WriteBatch* batch, LockTracker* keys_to_unlock);
 
   Status TryLock(ColumnFamilyHandle* column_family, const Slice& key,
                  bool read_only, bool exclusive, const bool do_validate = true,
@@ -147,6 +151,25 @@ class PessimisticTransaction : public TransactionBaseImpl {
   // If non-zero, this transaction should not be committed after this time (in
   // microseconds according to Env->NowMicros())
   uint64_t expiration_time_;
+
+  // Timestamp used by the transaction to perform all GetForUpdate.
+  // Use this timestamp for conflict checking.
+  // read_timestamp_ == kMaxTxnTimestamp means this transaction has not
+  // performed any GetForUpdate. It is possible that the transaction has
+  // performed blind writes or Get, though.
+  TxnTimestamp read_timestamp_{kMaxTxnTimestamp};
+  TxnTimestamp commit_timestamp_{kMaxTxnTimestamp};
+
+  // Refer to
+  // TransactionOptions::use_only_the_last_commit_time_batch_for_recovery
+  bool use_only_the_last_commit_time_batch_for_recovery_ = false;
+  // Refer to
+  // TransactionOptions::skip_prepare
+  bool skip_prepare_ = false;
+  // Refer to
+  // TransactionOptions::commit_bypass_memtable
+  uint32_t commit_bypass_memtable_threshold_ =
+      std::numeric_limits<uint32_t>::max();
 
  private:
   friend class TransactionTest_ValidateSnapshotTest_Test;
@@ -166,7 +189,7 @@ class PessimisticTransaction : public TransactionBaseImpl {
   //
   // If waiting_key_ is not null, then the pointer should always point to
   // a valid string object. The reason is that it is only non-null when the
-  // transaction is blocked in the TransactionLockMgr::AcquireWithTimeout
+  // transaction is blocked in the PointLockManager::AcquireWithTimeout
   // function. At that point, the key string object is one of the function
   // parameters.
   uint32_t waiting_cf_id_;
@@ -193,20 +216,114 @@ class PessimisticTransaction : public TransactionBaseImpl {
 
   void UnlockGetForUpdate(ColumnFamilyHandle* column_family,
                           const Slice& key) override;
-
-  // No copying allowed
-  PessimisticTransaction(const PessimisticTransaction&);
-  void operator=(const PessimisticTransaction&);
 };
 
 class WriteCommittedTxn : public PessimisticTransaction {
  public:
   WriteCommittedTxn(TransactionDB* db, const WriteOptions& write_options,
                     const TransactionOptions& txn_options);
+  // No copying allowed
+  WriteCommittedTxn(const WriteCommittedTxn&) = delete;
+  void operator=(const WriteCommittedTxn&) = delete;
 
-  virtual ~WriteCommittedTxn() {}
+  ~WriteCommittedTxn() override {}
+
+  using TransactionBaseImpl::GetForUpdate;
+  Status GetForUpdate(const ReadOptions& read_options,
+                      ColumnFamilyHandle* column_family, const Slice& key,
+                      std::string* value, bool exclusive,
+                      const bool do_validate) override;
+  Status GetForUpdate(const ReadOptions& read_options,
+                      ColumnFamilyHandle* column_family, const Slice& key,
+                      PinnableSlice* pinnable_val, bool exclusive,
+                      const bool do_validate) override;
+
+  Status GetEntityForUpdate(const ReadOptions& read_options,
+                            ColumnFamilyHandle* column_family, const Slice& key,
+                            PinnableWideColumns* columns, bool exclusive,
+                            bool do_validate) override;
+
+  using TransactionBaseImpl::Put;
+  // `key` does NOT include timestamp even when it's enabled.
+  Status Put(ColumnFamilyHandle* column_family, const Slice& key,
+             const Slice& value, const bool assume_tracked = false) override;
+  Status Put(ColumnFamilyHandle* column_family, const SliceParts& key,
+             const SliceParts& value,
+             const bool assume_tracked = false) override;
+
+  using TransactionBaseImpl::PutUntracked;
+  Status PutUntracked(ColumnFamilyHandle* column_family, const Slice& key,
+                      const Slice& value) override;
+  Status PutUntracked(ColumnFamilyHandle* column_family, const SliceParts& key,
+                      const SliceParts& value) override;
+
+  // `key` does NOT include timestamp even when it's enabled.
+  Status PutEntity(ColumnFamilyHandle* column_family, const Slice& key,
+                   const WideColumns& columns,
+                   bool assume_tracked = false) override {
+    const bool do_validate = !assume_tracked;
+
+    return PutEntityImpl(column_family, key, columns, do_validate,
+                         assume_tracked);
+  }
+
+  Status PutEntityUntracked(ColumnFamilyHandle* column_family, const Slice& key,
+                            const WideColumns& columns) override {
+    constexpr bool do_validate = false;
+    constexpr bool assume_tracked = false;
+
+    return PutEntityImpl(column_family, key, columns, do_validate,
+                         assume_tracked);
+  }
+
+  using TransactionBaseImpl::Delete;
+  // `key` does NOT include timestamp even when it's enabled.
+  Status Delete(ColumnFamilyHandle* column_family, const Slice& key,
+                const bool assume_tracked = false) override;
+  Status Delete(ColumnFamilyHandle* column_family, const SliceParts& key,
+                const bool assume_tracked = false) override;
+
+  using TransactionBaseImpl::DeleteUntracked;
+  Status DeleteUntracked(ColumnFamilyHandle* column_family,
+                         const Slice& key) override;
+  Status DeleteUntracked(ColumnFamilyHandle* column_family,
+                         const SliceParts& key) override;
+
+  using TransactionBaseImpl::SingleDelete;
+  // `key` does NOT include timestamp even when it's enabled.
+  Status SingleDelete(ColumnFamilyHandle* column_family, const Slice& key,
+                      const bool assume_tracked = false) override;
+  Status SingleDelete(ColumnFamilyHandle* column_family, const SliceParts& key,
+                      const bool assume_tracked = false) override;
+
+  using TransactionBaseImpl::SingleDeleteUntracked;
+  Status SingleDeleteUntracked(ColumnFamilyHandle* column_family,
+                               const Slice& key) override;
+
+  using TransactionBaseImpl::Merge;
+  Status Merge(ColumnFamilyHandle* column_family, const Slice& key,
+               const Slice& value, const bool assume_tracked = false) override;
+
+  Status SetReadTimestampForValidation(TxnTimestamp ts) override;
+  Status SetCommitTimestamp(TxnTimestamp ts) override;
+  TxnTimestamp GetCommitTimestamp() const override { return commit_timestamp_; }
 
  private:
+  template <typename TValue>
+  Status GetForUpdateImpl(const ReadOptions& read_options,
+                          ColumnFamilyHandle* column_family, const Slice& key,
+                          TValue* value, bool exclusive,
+                          const bool do_validate);
+
+  Status PutEntityImpl(ColumnFamilyHandle* column_family, const Slice& key,
+                       const WideColumns& columns, bool do_validate,
+                       bool assume_tracked);
+
+  template <typename TKey, typename TOperation>
+  Status Operate(ColumnFamilyHandle* column_family, const TKey& key,
+                 const bool do_validate, const bool assume_tracked,
+                 TOperation&& operation);
+
   Status PrepareInternal() override;
 
   Status CommitWithoutPrepareInternal() override;
@@ -217,11 +334,16 @@ class WriteCommittedTxn : public PessimisticTransaction {
 
   Status RollbackInternal() override;
 
-  // No copying allowed
-  WriteCommittedTxn(const WriteCommittedTxn&);
-  void operator=(const WriteCommittedTxn&);
+  // Checks if the combination of `do_validate`, the read timestamp set in
+  // `read_timestamp_` and the `enable_udt_validation` flag in
+  // TransactionDBOptions make sense together.
+  Status SanityCheckReadTimestamp(bool do_validate);
+
+  // Column families that enable timestamps and whose data are written when
+  // indexing_enabled_ is false. If a key is written when indexing_enabled_ is
+  // true, then the corresponding column family is not added to cfs_with_ts
+  // even if it enables timestamp.
+  std::unordered_set<uint32_t> cfs_with_ts_tracked_when_indexing_disabled_;
 };
 
-}  // namespace rocksdb
-
-#endif  // ROCKSDB_LITE
+}  // namespace ROCKSDB_NAMESPACE

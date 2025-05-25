@@ -5,33 +5,32 @@
 
 package org.rocksdb;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertEquals;
+
+import java.io.IOException;
+import java.nio.file.Paths;
+import java.util.*;
 import org.junit.ClassRule;
 import org.junit.Test;
 import org.rocksdb.test.RemoveEmptyValueCompactionFilterFactory;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
-import java.util.Random;
-
-import static org.assertj.core.api.Assertions.assertThat;
-
 public class ColumnFamilyOptionsTest {
 
   @ClassRule
-  public static final RocksMemoryResource rocksMemoryResource =
-      new RocksMemoryResource();
+  public static final RocksNativeLibraryResource ROCKS_NATIVE_LIBRARY_RESOURCE =
+      new RocksNativeLibraryResource();
 
   public static final Random rand = PlatformRandomHelper.
       getPlatformSpecificRandomFactory();
 
   @Test
   public void copyConstructor() {
-    ColumnFamilyOptions origOpts = new ColumnFamilyOptions();
+    final ColumnFamilyOptions origOpts = new ColumnFamilyOptions();
     origOpts.setNumLevels(rand.nextInt(8));
     origOpts.setTargetFileSizeMultiplier(rand.nextInt(100));
     origOpts.setLevel0StopWritesTrigger(rand.nextInt(50));
-    ColumnFamilyOptions copyOpts = new ColumnFamilyOptions(origOpts);
+    final ColumnFamilyOptions copyOpts = new ColumnFamilyOptions(origOpts);
     assertThat(origOpts.numLevels()).isEqualTo(copyOpts.numLevels());
     assertThat(origOpts.targetFileSizeMultiplier()).isEqualTo(copyOpts.targetFileSizeMultiplier());
     assertThat(origOpts.level0StopWritesTrigger()).isEqualTo(copyOpts.level0StopWritesTrigger());
@@ -39,7 +38,7 @@ public class ColumnFamilyOptionsTest {
 
   @Test
   public void getColumnFamilyOptionsFromProps() {
-    Properties properties = new Properties();
+    final Properties properties = new Properties();
     properties.put("write_buffer_size", "112");
     properties.put("max_write_buffer_number", "13");
 
@@ -51,6 +50,27 @@ public class ColumnFamilyOptionsTest {
           isEqualTo(properties.get("write_buffer_size"));
       assertThat(String.valueOf(opt.maxWriteBufferNumber())).
           isEqualTo(properties.get("max_write_buffer_number"));
+    }
+  }
+
+  @Test
+  public void getColumnFamilyOptionsFromPropsWithIgnoreIllegalValue() {
+    // setup sample properties
+    final Properties properties = new Properties();
+    properties.put("tomato", "1024");
+    properties.put("burger", "2");
+    properties.put("write_buffer_size", "112");
+    properties.put("max_write_buffer_number", "13");
+
+    try (final ConfigOptions cfgOpts = new ConfigOptions().setIgnoreUnknownOptions(true);
+         final ColumnFamilyOptions opt =
+             ColumnFamilyOptions.getColumnFamilyOptionsFromProps(cfgOpts, properties)) {
+      // setup sample properties
+      assertThat(opt).isNotNull();
+      assertThat(String.valueOf(opt.writeBufferSize()))
+          .isEqualTo(properties.get("write_buffer_size"));
+      assertThat(String.valueOf(opt.maxWriteBufferNumber()))
+          .isEqualTo(properties.get("max_write_buffer_number"));
     }
   }
 
@@ -69,16 +89,15 @@ public class ColumnFamilyOptionsTest {
 
   @Test(expected = IllegalArgumentException.class)
   public void failColumnFamilyOptionsFromPropsWithNullValue() {
-    try (final ColumnFamilyOptions opt =
+    try (final ColumnFamilyOptions ignored =
              ColumnFamilyOptions.getColumnFamilyOptionsFromProps(null)) {
     }
   }
 
   @Test(expected = IllegalArgumentException.class)
   public void failColumnFamilyOptionsFromPropsWithEmptyProps() {
-    try (final ColumnFamilyOptions opt =
-             ColumnFamilyOptions.getColumnFamilyOptionsFromProps(
-                 new Properties())) {
+    try (final ColumnFamilyOptions ignored =
+             ColumnFamilyOptions.getColumnFamilyOptionsFromProps(new Properties())) {
     }
   }
 
@@ -311,6 +330,24 @@ public class ColumnFamilyOptionsTest {
   }
 
   @Test
+  public void experimentalMempurgeThreshold() {
+    try (final ColumnFamilyOptions opt = new ColumnFamilyOptions()) {
+      final double doubleValue = rand.nextDouble();
+      opt.setExperimentalMempurgeThreshold(doubleValue);
+      assertThat(opt.experimentalMempurgeThreshold()).isEqualTo(doubleValue);
+    }
+  }
+
+  @Test
+  public void memtableWholeKeyFiltering() {
+    try (final ColumnFamilyOptions opt = new ColumnFamilyOptions()) {
+      final boolean booleanValue = rand.nextBoolean();
+      opt.setMemtableWholeKeyFiltering(booleanValue);
+      assertThat(opt.memtableWholeKeyFiltering()).isEqualTo(booleanValue);
+    }
+  }
+
+  @Test
   public void memtableHugePageSize() {
     try (final ColumnFamilyOptions opt = new ColumnFamilyOptions()) {
       final long longValue = rand.nextLong();
@@ -416,7 +453,7 @@ public class ColumnFamilyOptionsTest {
       }
       columnFamilyOptions.setCompressionPerLevel(compressionTypeList);
       compressionTypeList = columnFamilyOptions.compressionPerLevel();
-      for (CompressionType compressionType : compressionTypeList) {
+      for (final CompressionType compressionType : compressionTypeList) {
         assertThat(compressionType).isEqualTo(
             CompressionType.NO_COMPRESSION);
       }
@@ -525,19 +562,6 @@ public class ColumnFamilyOptionsTest {
   }
 
   @Test
-  public void maxWriteBufferNumberToMaintain() {
-    try (final ColumnFamilyOptions opt = new ColumnFamilyOptions()) {
-      int intValue = rand.nextInt();
-      // Size has to be positive
-      intValue = (intValue < 0) ? -intValue : intValue;
-      intValue = (intValue == 0) ? intValue + 1 : intValue;
-      opt.setMaxWriteBufferNumberToMaintain(intValue);
-      assertThat(opt.maxWriteBufferNumberToMaintain()).
-          isEqualTo(intValue);
-    }
-  }
-
-  @Test
   public void compactionPriorities() {
     try (final ColumnFamilyOptions opt = new ColumnFamilyOptions()) {
       for (final CompactionPriority compactionPriority :
@@ -565,6 +589,14 @@ public class ColumnFamilyOptionsTest {
       options.setTtl(1000 * 60);
       assertThat(options.ttl()).
           isEqualTo(1000 * 60);
+    }
+  }
+
+  @Test
+  public void periodicCompactionSeconds() {
+    try (final ColumnFamilyOptions options = new ColumnFamilyOptions()) {
+      options.setPeriodicCompactionSeconds(1000 * 60);
+      assertThat(options.periodicCompactionSeconds()).isEqualTo(1000 * 60);
     }
   }
 
@@ -622,4 +654,56 @@ public class ColumnFamilyOptionsTest {
     }
   }
 
+  @Test
+  public void compactionThreadLimiter() {
+    try (final ColumnFamilyOptions options = new ColumnFamilyOptions();
+         final ConcurrentTaskLimiter compactionThreadLimiter =
+             new ConcurrentTaskLimiterImpl("name", 3)) {
+      options.setCompactionThreadLimiter(compactionThreadLimiter);
+      assertThat(options.compactionThreadLimiter()).isEqualTo(compactionThreadLimiter);
+    }
+  }
+
+  @Test
+  public void oldDefaults() {
+    try (final ColumnFamilyOptions options = new ColumnFamilyOptions()) {
+      options.oldDefaults(4, 6);
+      assertEquals(4 << 20, options.writeBufferSize());
+      assertThat(options.compactionPriority()).isEqualTo(CompactionPriority.ByCompensatedSize);
+      assertThat(options.targetFileSizeBase()).isEqualTo(2 * 1048576);
+      assertThat(options.maxBytesForLevelBase()).isEqualTo(10 * 1048576);
+      assertThat(options.softPendingCompactionBytesLimit()).isEqualTo(0);
+      assertThat(options.hardPendingCompactionBytesLimit()).isEqualTo(0);
+      assertThat(options.level0StopWritesTrigger()).isEqualTo(24);
+    }
+  }
+
+  @Test
+  public void optimizeForSmallDbWithCache() {
+    try (final ColumnFamilyOptions options = new ColumnFamilyOptions();
+         final Cache cache = new LRUCache(1024)) {
+      assertThat(options.optimizeForSmallDb(cache)).isEqualTo(options);
+    }
+  }
+
+  @Test
+  public void cfPaths() throws IOException {
+    try (final ColumnFamilyOptions options = new ColumnFamilyOptions()) {
+      final List<DbPath> paths = Arrays.asList(
+          new DbPath(Paths.get("test1"), 2 << 25), new DbPath(Paths.get("/test2/path"), 2 << 25));
+      assertThat(options.cfPaths()).isEqualTo(Collections.emptyList());
+      assertThat(options.setCfPaths(paths)).isEqualTo(options);
+      assertThat(options.cfPaths()).isEqualTo(paths);
+    }
+  }
+
+  @Test
+  public void memtableMaxRangeDeletions() {
+    try (final ColumnFamilyOptions options = new ColumnFamilyOptions()) {
+      assertThat(options.memtableMaxRangeDeletions()).isEqualTo(0);
+      final int val = 32;
+      assertThat(options.setMemtableMaxRangeDeletions(val)).isEqualTo(options);
+      assertThat(options.memtableMaxRangeDeletions()).isEqualTo(val);
+    }
+  }
 }

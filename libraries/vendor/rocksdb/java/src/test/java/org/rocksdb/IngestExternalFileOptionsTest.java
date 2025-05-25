@@ -14,8 +14,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 public class IngestExternalFileOptionsTest {
   @ClassRule
-  public static final RocksMemoryResource rocksMemoryResource
-      = new RocksMemoryResource();
+  public static final RocksNativeLibraryResource ROCKS_NATIVE_LIBRARY_RESOURCE
+      = new RocksNativeLibraryResource();
 
   public static final Random rand =
       PlatformRandomHelper.getPlatformSpecificRandomFactory();
@@ -99,9 +99,9 @@ public class IngestExternalFileOptionsTest {
   public void writeGlobalSeqno() {
     try (final IngestExternalFileOptions options =
              new IngestExternalFileOptions()) {
-      assertThat(options.writeGlobalSeqno()).isTrue();
-      options.setWriteGlobalSeqno(false);
       assertThat(options.writeGlobalSeqno()).isFalse();
+      options.setWriteGlobalSeqno(true);
+      assertThat(options.writeGlobalSeqno()).isTrue();
     }
   }
 }

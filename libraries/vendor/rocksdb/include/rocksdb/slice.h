@@ -18,43 +18,37 @@
 
 #pragma once
 
-#include <assert.h>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
-#include <stddef.h>
-#include <string.h>
+#include <cstring>
 #include <string>
-
-#ifdef __cpp_lib_string_view
-#include <string_view>
-#endif
+#include <string_view>  // RocksDB now requires C++17 support
 
 #include "rocksdb/cleanable.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class Slice {
  public:
   // Create an empty slice.
-  Slice() : data_(""), size_(0) { }
+  Slice() : data_(""), size_(0) {}
 
   // Create a slice that refers to d[0,n-1].
-  Slice(const char* d, size_t n) : data_(d), size_(n) { }
+  Slice(const char* d, size_t n) : data_(d), size_(n) {}
 
   // Create a slice that refers to the contents of "s"
   /* implicit */
-  Slice(const std::string& s) : data_(s.data()), size_(s.size()) { }
+  Slice(const std::string& s) : data_(s.data()), size_(s.size()) {}
 
-#ifdef __cpp_lib_string_view
   // Create a slice that refers to the same contents as "sv"
   /* implicit */
-  Slice(std::string_view sv) : data_(sv.data()), size_(sv.size()) {}
-#endif
+  Slice(const std::string_view& sv) : data_(sv.data()), size_(sv.size()) {}
 
   // Create a slice that refers to s[0,strlen(s)-1]
   /* implicit */
-  Slice(const char* s) : data_(s) {
-    size_ = (s == nullptr) ? 0 : strlen(s);
-  }
+  Slice(const char* s) : data_(s) { size_ = (s == nullptr) ? 0 : strlen(s); }
 
   // Create a single slice from SliceParts using buf as storage.
   // buf must exist as long as the returned Slice exists.
@@ -77,7 +71,10 @@ class Slice {
   }
 
   // Change this slice to refer to an empty array
-  void clear() { data_ = ""; size_ = 0; }
+  void clear() {
+    data_ = "";
+    size_ = 0;
+  }
 
   // Drop the first "n" bytes from this slice.
   void remove_prefix(size_t n) {
@@ -95,12 +92,10 @@ class Slice {
   // when hex is true, returns a string of twice the length hex encoded (0-9A-F)
   std::string ToString(bool hex = false) const;
 
-#ifdef __cpp_lib_string_view
   // Return a string_view that references the same data as this slice.
   std::string_view ToStringView() const {
     return std::string_view(data_, size_);
   }
-#endif
 
   // Decodes the current slice interpreted as an hexadecimal string into result,
   // if successful returns true, if this isn't a valid hex string
@@ -117,8 +112,7 @@ class Slice {
 
   // Return true iff "x" is a prefix of "*this"
   bool starts_with(const Slice& x) const {
-    return ((size_ >= x.size_) &&
-            (memcmp(data_, x.data_, x.size_) == 0));
+    return ((size_ >= x.size_) && (memcmp(data_, x.data_, x.size_) == 0));
   }
 
   bool ends_with(const Slice& x) const {
@@ -129,11 +123,51 @@ class Slice {
   // Compare two slices and returns the first byte where they differ
   size_t difference_offset(const Slice& b) const;
 
- // private: make these public for rocksdbjni access
+  // private: make these public for rocksdbjni access
   const char* data_;
   size_t size_;
 
   // Intentionally copyable
+};
+
+// A likely more efficient alternative to std::optional<Slice>. For example,
+// an empty key might be distinct from "not specified" (and Slice* as an
+// optional is more troublesome to deal with).
+class OptSlice {
+ public:
+  OptSlice() : slice_(nullptr, SIZE_MAX) {}
+  /*implicit*/ OptSlice(const Slice& s) : slice_(s) {}
+  /*implicit*/ OptSlice(const std::string& s) : slice_(s) {}
+  /*implicit*/ OptSlice(const std::string_view& sv) : slice_(sv) {}
+  /*implicit*/ OptSlice(const char* c_str) : slice_(c_str) {}
+  // For easier migrating from APIs uing Slice* as an optional type.
+  // CAUTION: OptSlice{nullptr} is "no value" while Slice{nullptr} is "empty"
+  /*implicit*/ OptSlice(std::nullptr_t) : OptSlice() {}
+
+  bool has_value() const noexcept { return slice_.size() != SIZE_MAX; }
+  explicit operator bool() const noexcept { return has_value(); }
+
+  const Slice& value() const noexcept {
+    assert(has_value());
+    return slice_;
+  }
+  const Slice& operator*() const noexcept { return value(); }
+  const Slice* operator->() const noexcept { return &value(); }
+
+  const Slice* AsPtr() const noexcept {
+    return has_value() ? &slice_ : nullptr;
+  }
+  // Populate from an optional pointer. This is a very explicit conversion
+  // to minimize risk of bugs as in
+  //   Slice start, limit;
+  //   RangeOpt rng = {&start, &limit};
+  //   start = ...;  // BUG: would not affect rng
+  static OptSlice CopyFromPtr(const Slice* ptr) {
+    return ptr ? OptSlice{*ptr} : OptSlice{};
+  }
+
+ protected:
+  Slice slice_;
 };
 
 /**
@@ -146,6 +180,9 @@ class PinnableSlice : public Slice, public Cleanable {
  public:
   PinnableSlice() { buf_ = &self_space_; }
   explicit PinnableSlice(std::string* buf) { buf_ = buf; }
+
+  PinnableSlice(PinnableSlice&& other);
+  PinnableSlice& operator=(PinnableSlice&& other);
 
   // No copy constructor and copy assignment allowed.
   PinnableSlice(PinnableSlice&) = delete;
@@ -166,7 +203,9 @@ class PinnableSlice : public Slice, public Cleanable {
     pinned_ = true;
     data_ = s.data();
     size_ = s.size();
-    cleanable->DelegateCleanupsTo(this);
+    if (cleanable != nullptr) {
+      cleanable->DelegateCleanupsTo(this);
+    }
     assert(pinned_);
   }
 
@@ -195,8 +234,15 @@ class PinnableSlice : public Slice, public Cleanable {
     }
   }
 
-  void remove_prefix(size_t /*n*/) {
-    assert(0);  // Not implemented
+  void remove_prefix(size_t n) {
+    assert(n <= size());
+    if (pinned_) {
+      data_ += n;
+      size_ -= n;
+    } else {
+      buf_->erase(0, n);
+      PinSelf();
+    }
   }
 
   void Reset() {
@@ -207,7 +253,7 @@ class PinnableSlice : public Slice, public Cleanable {
 
   inline std::string* GetSelf() { return buf_; }
 
-  inline bool IsPinned() { return pinned_; }
+  inline bool IsPinned() const { return pinned_; }
 
  private:
   friend class PinnableSlice4Test;
@@ -219,8 +265,8 @@ class PinnableSlice : public Slice, public Cleanable {
 // A set of Slices that are virtually concatenated together.  'parts' points
 // to an array of Slices.  The number of elements in the array is 'num_parts'.
 struct SliceParts {
-  SliceParts(const Slice* _parts, int _num_parts) :
-      parts(_parts), num_parts(_num_parts) { }
+  SliceParts(const Slice* _parts, int _num_parts)
+      : parts(_parts), num_parts(_num_parts) {}
   SliceParts() : parts(nullptr), num_parts(0) {}
 
   const Slice* parts;
@@ -232,17 +278,17 @@ inline bool operator==(const Slice& x, const Slice& y) {
           (memcmp(x.data(), y.data(), x.size()) == 0));
 }
 
-inline bool operator!=(const Slice& x, const Slice& y) {
-  return !(x == y);
-}
+inline bool operator!=(const Slice& x, const Slice& y) { return !(x == y); }
 
 inline int Slice::compare(const Slice& b) const {
   assert(data_ != nullptr && b.data_ != nullptr);
   const size_t min_len = (size_ < b.size_) ? size_ : b.size_;
   int r = memcmp(data_, b.data_, min_len);
   if (r == 0) {
-    if (size_ < b.size_) r = -1;
-    else if (size_ > b.size_) r = +1;
+    if (size_ < b.size_)
+      r = -1;
+    else if (size_ > b.size_)
+      r = +1;
   }
   return r;
 }
@@ -256,4 +302,4 @@ inline size_t Slice::difference_offset(const Slice& b) const {
   return off;
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

@@ -4,8 +4,8 @@
 //  (found in the LICENSE.Apache file in the root directory).
 
 #pragma once
-#ifndef ROCKSDB_LITE
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -13,7 +13,7 @@
 #include "rocksdb/db.h"
 #include "rocksdb/utilities/stackable_db.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class Transaction;
 
@@ -31,6 +31,59 @@ struct OptimisticTransactionOptions {
   const Comparator* cmp = BytewiseComparator();
 };
 
+enum class OccValidationPolicy {
+  // Validate serially at commit stage, AFTER entering the write-group.
+  // Isolation validation is processed single-threaded(since in the
+  // write-group).
+  // May suffer from high mutex contention, as per this link:
+  // https://github.com/facebook/rocksdb/issues/4402
+  kValidateSerial = 0,
+  // Validate parallelly before commit stage, BEFORE entering the write-group to
+  // reduce mutex contention. Each txn acquires locks for its write-set
+  // records in some well-defined order.
+  kValidateParallel = 1
+};
+
+class OccLockBuckets {
+ public:
+  // Most details in internal derived class.
+  // Users should not derive from this class.
+  virtual ~OccLockBuckets() {}
+
+  virtual size_t ApproximateMemoryUsage() const = 0;
+
+ private:
+  friend class OccLockBucketsImplBase;
+  OccLockBuckets() {}
+};
+
+// An object for sharing a pool of locks across DB instances.
+//
+// Making the locks cache-aligned avoids potential false sharing, at the
+// potential cost of extra memory. The implementation has historically
+// used cache_aligned = false.
+std::shared_ptr<OccLockBuckets> MakeSharedOccLockBuckets(
+    size_t bucket_count, bool cache_aligned = false);
+
+struct OptimisticTransactionDBOptions {
+  OccValidationPolicy validate_policy = OccValidationPolicy::kValidateParallel;
+
+  // Number of striped/bucketed mutex locks for validating transactions.
+  // Used on only if validate_policy == OccValidationPolicy::kValidateParallel
+  // and shared_lock_buckets (below) is empty. Larger number potentially
+  // reduces contention but uses more memory.
+  uint32_t occ_lock_buckets = (1 << 20);
+
+  // A pool of mutex locks for validating transactions. Can be shared among
+  // DBs. Ignored if validate_policy != OccValidationPolicy::kValidateParallel.
+  // If empty and validate_policy == OccValidationPolicy::kValidateParallel,
+  // an OccLockBuckets will be created using the count in occ_lock_buckets.
+  // See MakeSharedOccLockBuckets()
+  std::shared_ptr<OccLockBuckets> shared_lock_buckets;
+};
+
+// Range deletions (including those in `WriteBatch`es passed to `Write()`) are
+// incompatible with `OptimisticTransactionDB` and will return a non-OK `Status`
 class OptimisticTransactionDB : public StackableDB {
  public:
   // Open an OptimisticTransactionDB similar to DB::Open().
@@ -42,7 +95,14 @@ class OptimisticTransactionDB : public StackableDB {
                      std::vector<ColumnFamilyHandle*>* handles,
                      OptimisticTransactionDB** dbptr);
 
-  virtual ~OptimisticTransactionDB() {}
+  static Status Open(const DBOptions& db_options,
+                     const OptimisticTransactionDBOptions& occ_options,
+                     const std::string& dbname,
+                     const std::vector<ColumnFamilyDescriptor>& column_families,
+                     std::vector<ColumnFamilyHandle*>* handles,
+                     OptimisticTransactionDB** dbptr);
+
+  ~OptimisticTransactionDB() override {}
 
   // Starts a new Transaction.
   //
@@ -66,6 +126,4 @@ class OptimisticTransactionDB : public StackableDB {
   explicit OptimisticTransactionDB(DB* db) : StackableDB(db) {}
 };
 
-}  // namespace rocksdb
-
-#endif  // ROCKSDB_LITE
+}  // namespace ROCKSDB_NAMESPACE

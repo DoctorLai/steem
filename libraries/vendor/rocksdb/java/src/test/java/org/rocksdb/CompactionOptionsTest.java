@@ -13,17 +13,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class CompactionOptionsTest {
 
   @ClassRule
-  public static final RocksMemoryResource rocksMemoryResource =
-      new RocksMemoryResource();
+  public static final RocksNativeLibraryResource ROCKS_NATIVE_LIBRARY_RESOURCE =
+      new RocksNativeLibraryResource();
 
   @Test
   public void compression() {
     try (final CompactionOptions compactionOptions = new CompactionOptions()) {
       assertThat(compactionOptions.compression())
-          .isEqualTo(CompressionType.SNAPPY_COMPRESSION);
-      compactionOptions.setCompression(CompressionType.NO_COMPRESSION);
-      assertThat(compactionOptions.compression())
-          .isEqualTo(CompressionType.NO_COMPRESSION);
+          .isEqualTo(CompressionType.DISABLE_COMPRESSION_OPTION);
+      compactionOptions.setCompression(CompressionType.SNAPPY_COMPRESSION);
+      assertThat(compactionOptions.compression()).isEqualTo(CompressionType.SNAPPY_COMPRESSION);
     }
   }
 

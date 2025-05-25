@@ -7,12 +7,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#include <assert.h>
-#include "rocksdb/write_buffer_manager.h"
-#include "util/allocator.h"
-#include "util/arena.h"
+#include <cassert>
 
-namespace rocksdb {
+#include "memory/allocator.h"
+#include "memory/arena.h"
+#include "rocksdb/write_buffer_manager.h"
+
+namespace ROCKSDB_NAMESPACE {
 
 AllocTracker::AllocTracker(WriteBufferManager* write_buffer_manager)
     : write_buffer_manager_(write_buffer_manager),
@@ -59,4 +60,4 @@ void AllocTracker::FreeMem() {
     freed_ = true;
   }
 }
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

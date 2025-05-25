@@ -10,16 +10,14 @@
 #pragma once
 
 #include "monitoring/histogram.h"
-#include "rocksdb/env.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
+class SystemClock;
 
-class HistogramWindowingImpl : public Histogram
-{
-public:
+class HistogramWindowingImpl : public Histogram {
+ public:
   HistogramWindowingImpl();
-  HistogramWindowingImpl(uint64_t num_windows,
-                         uint64_t micros_per_window,
+  HistogramWindowingImpl(uint64_t num_windows, uint64_t micros_per_window,
                          uint64_t min_num_per_window);
 
   HistogramWindowingImpl(const HistogramWindowingImpl&) = delete;
@@ -27,34 +25,40 @@ public:
 
   ~HistogramWindowingImpl();
 
-  virtual void Clear() override;
-  virtual bool Empty() const override;
-  virtual void Add(uint64_t value) override;
-  virtual void Merge(const Histogram& other) override;
+  void Clear() override;
+  bool Empty() const override;
+  void Add(uint64_t value) override;
+  void Merge(const Histogram& other) override;
   void Merge(const HistogramWindowingImpl& other);
 
-  virtual std::string ToString() const override;
-  virtual const char* Name() const override { return "HistogramWindowingImpl"; }
-  virtual uint64_t min() const override { return stats_.min(); }
-  virtual uint64_t max() const override { return stats_.max(); }
-  virtual uint64_t num() const override { return stats_.num(); }
-  virtual double Median() const override;
-  virtual double Percentile(double p) const override;
-  virtual double Average() const override;
-  virtual double StandardDeviation() const override;
-  virtual void Data(HistogramData* const data) const override;
+  std::string ToString() const override;
+  const char* Name() const override { return "HistogramWindowingImpl"; }
+  uint64_t min() const override { return stats_.min(); }
+  uint64_t max() const override { return stats_.max(); }
+  uint64_t num() const override { return stats_.num(); }
+  double Median() const override;
+  double Percentile(double p) const override;
+  double Average() const override;
+  double StandardDeviation() const override;
+  void Data(HistogramData* const data) const override;
 
-private:
+#ifndef NDEBUG
+  void TEST_UpdateClock(const std::shared_ptr<SystemClock>& clock) {
+    clock_ = clock;
+  }
+#endif  // NDEBUG
+
+ private:
   void TimerTick();
   void SwapHistoryBucket();
   inline uint64_t current_window() const {
     return current_window_.load(std::memory_order_relaxed);
   }
-  inline uint64_t last_swap_time() const{
+  inline uint64_t last_swap_time() const {
     return last_swap_time_.load(std::memory_order_relaxed);
   }
 
-  Env* env_;
+  std::shared_ptr<SystemClock> clock_;
   std::mutex mutex_;
 
   // Aggregated stats over windows_stats_, all the computation is done
@@ -77,4 +81,4 @@ private:
   uint64_t min_num_per_window_ = 0;
 };
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

@@ -11,7 +11,7 @@
 #include "util/string_util.h"
 #include "util/thread_operation.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 #ifdef ROCKSDB_USING_THREAD_STATUS
 std::string ThreadStatus::GetThreadTypeName(
@@ -67,7 +67,7 @@ const std::string ThreadStatus::MicrosToString(uint64_t micros) {
 
 const std::string& ThreadStatus::GetOperationPropertyName(
     ThreadStatus::OperationType op_type, int i) {
-  static const std::string empty_str = "";
+  static const std::string empty_str;
   switch (op_type) {
     case ThreadStatus::OP_COMPACTION:
       if (i >= NUM_COMPACTION_PROPERTIES) {
@@ -160,4 +160,4 @@ std::map<std::string, uint64_t> ThreadStatus::InterpretOperationProperties(
 }
 
 #endif  // ROCKSDB_USING_THREAD_STATUS
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

@@ -6,30 +6,42 @@
 #pragma once
 
 #include <string>
+
+#include "rocksdb/customizable.h"
 #include "rocksdb/table.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class Slice;
 class BlockBuilder;
+struct ConfigOptions;
 struct Options;
 
 // FlushBlockPolicy provides a configurable way to determine when to flush a
-// block in the block based tables,
+// block in the block based tables.
+//
+// Exceptions MUST NOT propagate out of overridden functions into RocksDB,
+// because RocksDB is not exception-safe. This could cause undefined behavior
+// including data loss, unreported corruption, deadlocks, and more.
 class FlushBlockPolicy {
  public:
   // Keep track of the key/value sequences and return the boolean value to
   // determine if table builder should flush current data block.
-  virtual bool Update(const Slice& key,
-                      const Slice& value) = 0;
+  virtual bool Update(const Slice& key, const Slice& value) = 0;
 
-  virtual ~FlushBlockPolicy() { }
+  virtual ~FlushBlockPolicy() {}
 };
 
-class FlushBlockPolicyFactory {
+class FlushBlockPolicyFactory : public Customizable {
  public:
-  // Return the name of the flush block policy.
-  virtual const char* Name() const = 0;
+  static const char* Type() { return "FlushBlockPolicyFactory"; }
+
+  // Creates a FlushBlockPolicyFactory based on the input value.
+  // By default, this method can create EveryKey or BySize PolicyFactory,
+  // which take now config_options.
+  static Status CreateFromString(
+      const ConfigOptions& config_options, const std::string& value,
+      std::shared_ptr<FlushBlockPolicyFactory>* result);
 
   // Return a new block flush policy that flushes data blocks by data size.
   // FlushBlockPolicy may need to access the metadata of the data block
@@ -41,14 +53,15 @@ class FlushBlockPolicyFactory {
       const BlockBasedTableOptions& table_options,
       const BlockBuilder& data_block_builder) const = 0;
 
-  virtual ~FlushBlockPolicyFactory() { }
+  virtual ~FlushBlockPolicyFactory() {}
 };
 
 class FlushBlockBySizePolicyFactory : public FlushBlockPolicyFactory {
  public:
-  FlushBlockBySizePolicyFactory() {}
+  FlushBlockBySizePolicyFactory();
 
-  const char* Name() const override { return "FlushBlockBySizePolicyFactory"; }
+  static const char* kClassName() { return "FlushBlockBySizePolicyFactory"; }
+  const char* Name() const override { return kClassName(); }
 
   FlushBlockPolicy* NewFlushBlockPolicy(
       const BlockBasedTableOptions& table_options,
@@ -59,4 +72,4 @@ class FlushBlockBySizePolicyFactory : public FlushBlockPolicyFactory {
       const BlockBuilder& data_block_builder);
 };
 
-}  // rocksdb
+}  // namespace ROCKSDB_NAMESPACE

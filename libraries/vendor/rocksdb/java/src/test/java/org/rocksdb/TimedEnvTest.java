@@ -15,8 +15,8 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 public class TimedEnvTest {
 
   @ClassRule
-  public static final RocksMemoryResource rocksMemoryResource =
-      new RocksMemoryResource();
+  public static final RocksNativeLibraryResource ROCKS_NATIVE_LIBRARY_RESOURCE =
+      new RocksNativeLibraryResource();
 
   @Rule
   public TemporaryFolder dbFolder = new TemporaryFolder();
@@ -31,10 +31,7 @@ public class TimedEnvTest {
   @Test
   public void construct_integration() throws RocksDBException {
     try (final Env env = new TimedEnv(Env.getDefault());
-         final Options options = new Options()
-             .setCreateIfMissing(true)
-             .setEnv(env);
-    ) {
+         final Options options = new Options().setCreateIfMissing(true).setEnv(env)) {
       try (final RocksDB db = RocksDB.open(options, dbFolder.getRoot().getPath())) {
         db.put("key1".getBytes(UTF_8), "value1".getBytes(UTF_8));
       }

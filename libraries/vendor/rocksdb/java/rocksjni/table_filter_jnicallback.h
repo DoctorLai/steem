@@ -4,31 +4,33 @@
 //  (found in the LICENSE.Apache file in the root directory).
 //
 // This file implements the callback "bridge" between Java and C++ for
-// rocksdb::TableFilter.
+// ROCKSDB_NAMESPACE::TableFilter.
 
 #ifndef JAVA_ROCKSJNI_TABLE_FILTER_JNICALLBACK_H_
 #define JAVA_ROCKSJNI_TABLE_FILTER_JNICALLBACK_H_
 
 #include <jni.h>
+
 #include <functional>
 #include <memory>
 
 #include "rocksdb/table_properties.h"
 #include "rocksjni/jnicallback.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class TableFilterJniCallback : public JniCallback {
  public:
-    TableFilterJniCallback(
-        JNIEnv* env, jobject jtable_filter);
-    std::function<bool(const rocksdb::TableProperties&)> GetTableFilterFunction();
+  TableFilterJniCallback(JNIEnv* env, jobject jtable_filter);
+  std::function<bool(const ROCKSDB_NAMESPACE::TableProperties&)>
+  GetTableFilterFunction();
 
  private:
-    jmethodID m_jfilter_methodid;
-    std::function<bool(const rocksdb::TableProperties&)> m_table_filter_function;
+  jmethodID m_jfilter_methodid;
+  std::function<bool(const ROCKSDB_NAMESPACE::TableProperties&)>
+      m_table_filter_function;
 };
 
-}  //namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 
 #endif  // JAVA_ROCKSJNI_TABLE_FILTER_JNICALLBACK_H_

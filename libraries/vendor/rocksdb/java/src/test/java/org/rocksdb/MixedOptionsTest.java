@@ -13,8 +13,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class MixedOptionsTest {
 
   @ClassRule
-  public static final RocksMemoryResource rocksMemoryResource =
-      new RocksMemoryResource();
+  public static final RocksNativeLibraryResource ROCKS_NATIVE_LIBRARY_RESOURCE =
+      new RocksNativeLibraryResource();
 
   @Test
   public void mixedOptionsTest(){
@@ -22,7 +22,7 @@ public class MixedOptionsTest {
     try(final Filter bloomFilter = new BloomFilter();
         final ColumnFamilyOptions cfOptions = new ColumnFamilyOptions()
             .setTableFormatConfig(
-                new BlockBasedTableConfig().setFilter(bloomFilter))
+                new BlockBasedTableConfig().setFilterPolicy(bloomFilter))
     ) {
       assertThat(cfOptions.tableFactoryName()).isEqualTo(
           "BlockBasedTable");
@@ -49,6 +49,36 @@ public class MixedOptionsTest {
         options.optimizeUniversalStyleCompaction(400);
         options.optimizeForPointLookup(1024);
         options.prepareForBulkLoad();
+      }
+    }
+  }
+
+  @Test
+  public void mixedOptionsEnvTest() {
+    try (final ColumnFamilyOptions cfOptions = new ColumnFamilyOptions();
+         final DBOptions dbOptions = new DBOptions()) {
+      assertThat(dbOptions.getEnv()).isNotNull();
+      assertThat(dbOptions.getEnv()).isSameAs(Env.getDefault());
+      final Env memEnv = new RocksMemEnv(Env.getDefault());
+
+      try (final Options options = new Options(dbOptions, cfOptions)) {
+        assertThat(options.getEnv()).isSameAs(Env.getDefault());
+      }
+
+      dbOptions.setEnv(memEnv);
+      memEnv.setBackgroundThreads(4, Priority.LOW);
+      Env.getDefault().setBackgroundThreads(2, Priority.HIGH);
+      assertThat(dbOptions.getEnv().getBackgroundThreads(Priority.LOW)).isEqualTo(4);
+      assertThat(dbOptions.getEnv().getBackgroundThreads(Priority.HIGH)).isEqualTo(2);
+      assertThat(Env.getDefault().getBackgroundThreads(Priority.LOW)).isEqualTo(4);
+      assertThat(Env.getDefault().getBackgroundThreads(Priority.HIGH)).isEqualTo(2);
+
+      try (final Options options = new Options(dbOptions, cfOptions)) {
+        assertThat(options.getEnv().getBackgroundThreads(Priority.LOW)).isEqualTo(4);
+        assertThat(options.getEnv().getBackgroundThreads(Priority.HIGH)).isEqualTo(2);
+
+        assertThat(options.getEnv()).isNotSameAs(Env.getDefault());
+        assertThat(options.getEnv()).isSameAs(memEnv);
       }
     }
   }

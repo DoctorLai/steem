@@ -16,13 +16,14 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.rocksdb.util.ByteUtil.bytes;
 import static org.rocksdb.util.TestUtil.*;
 
 public class WalFilterTest {
 
   @ClassRule
-  public static final RocksMemoryResource rocksMemoryResource =
-      new RocksMemoryResource();
+  public static final RocksNativeLibraryResource ROCKS_NATIVE_LIBRARY_RESOURCE =
+      new RocksNativeLibraryResource();
 
   @Rule
   public TemporaryFolder dbFolder = new TemporaryFolder();
@@ -32,23 +33,23 @@ public class WalFilterTest {
     // Create 3 batches with two keys each
     final byte[][][] batchKeys = {
         new byte[][] {
-            u("key1"),
-            u("key2")
+            bytes("key1"),
+            bytes("key2")
         },
         new byte[][] {
-            u("key3"),
-            u("key4")
+            bytes("key3"),
+            bytes("key4")
         },
         new byte[][] {
-            u("key5"),
-            u("key6")
+            bytes("key5"),
+            bytes("key6")
         }
 
     };
 
     final List<ColumnFamilyDescriptor> cfDescriptors = Arrays.asList(
         new ColumnFamilyDescriptor(RocksDB.DEFAULT_COLUMN_FAMILY),
-        new ColumnFamilyDescriptor(u("pikachu"))
+        new ColumnFamilyDescriptor(bytes("pikachu"))
     );
     final List<ColumnFamilyHandle> cfHandles = new ArrayList<>();
 
@@ -62,10 +63,10 @@ public class WalFilterTest {
                 cfDescriptors, cfHandles)) {
         try (final WriteOptions writeOptions = new WriteOptions()) {
           // Write given keys in given batches
-          for (int i = 0; i < batchKeys.length; i++) {
+          for (final byte[][] batchKey : batchKeys) {
             final WriteBatch batch = new WriteBatch();
-            for (int j = 0; j < batchKeys[i].length; j++) {
-              batch.put(cfHandles.get(0), batchKeys[i][j], dummyString(1024));
+            for (final byte[] bytes : batchKey) {
+              batch.put(cfHandles.get(0), bytes, dummyString(1024));
             }
             db.write(writeOptions, batch);
           }
