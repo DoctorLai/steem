@@ -32,7 +32,6 @@ RUN apt-get update && \
     apt-get install -y \
         git \
         build-essential \
-        libboost-all-dev \
         cmake \
         libssl-dev \
         libsnappy-dev \
@@ -52,7 +51,16 @@ RUN apt-get update && \
         zlib1g-dev \
         libbz2-dev \
         liblz4-dev \
-        libzstd-dev
+        libzstd-dev \
+        wget
+
+## upgrade to boost 1.78
+RUN wget https://archives.boost.io/release/1.78.0/source/boost_1_78_0.tar.gz && \
+    tar -xvzf boost_1_78_0.tar.gz && \
+    cd boost_1_78_0 && \
+    ./bootstrap.sh && \
+    ./b2 && \
+    ./b2 install
 
 WORKDIR /usr/local/src
 ADD . /usr/local/src
@@ -96,7 +104,7 @@ RUN if [ "${DOXYGEN}" = "ON" ] ; then \
         programs/build_helpers/get_config_check.sh; \
     fi
 
-FROM ubuntu:20.04 as final
+FROM ubuntu:20.04 AS final
 
 ARG CMAKE_BUILD_TYPE=Release
 ARG STEEM_STATIC_BUILD=ON
