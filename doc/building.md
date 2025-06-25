@@ -41,7 +41,7 @@ We ship a Dockerfile.  This builds both common node type binaries.
 
     git clone https://github.com/steemit/steem
     cd steem
-    docker build -t steemit/steem -f deploy/Dockerfile.ubuntu18.04 .
+    docker build -t steemit/steem -f deploy/Dockerfile. .
 
 ## Building on macOS X
 
