@@ -1,5 +1,6 @@
 #pragma once
 
+#include <utility>
 #include <boost/interprocess/managed_mapped_file.hpp>
 #include <boost/interprocess/containers/map.hpp>
 #include <boost/interprocess/containers/set.hpp>
@@ -994,9 +995,7 @@ namespace chainbase {
          }
 
 #ifndef ENABLE_MIRA
-         auto get_segment_manager() -> decltype( ((bip::managed_mapped_file*)nullptr)->get_segment_manager()) {
-            return _segment->get_segment_manager();
-         }
+         auto get_segment_manager() -> decltype(std::declval<bip::managed_mapped_file>().get_segment_manager());
 #endif
          unsigned long long get_total_system_memory() const
          {
