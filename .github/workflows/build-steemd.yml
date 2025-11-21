@@ -1,0 +1,41 @@
+name: Build steemd at Ubuntu18.04
+
+on:
+  push:
+    paths:
+      - ".github/workflows/build-steemd.yml"
+
+  pull_request:
+
+  workflow_dispatch:
+
+jobs:
+  build-steemd:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: true
+      matrix:
+        dockerfile:
+          - Dockerfile.new
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          set -ex
+
+          FILE="${{ matrix.dockerfile }}"
+          NAME="${{ matrix.dockerfile }}"
+          TAG="steem:${NAME#Dockerfile.}"
+
+          echo "Building Dockerfile: $FILE"
+          echo "Tag: $TAG"
+
+          sudo -E docker build \
+            --build-arg UNIT_TEST=ON \
+            -t "$TAG" \
+            -f "$FILE" \
+            .
