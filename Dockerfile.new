@@ -67,7 +67,9 @@ RUN mkdir build && \
     make install
 
 RUN if [ "${UNIT_TEST}" = "ON" ] ; then \
-        cd tests && \
+        ls && \
+        cd build/tests && \
+        ls && \
         ctest -j$(nproc) --output-on-failure && \
         ./chain_test -t basic_tests/curation_weight_test && \
         cd .. && \
